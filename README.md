@@ -1,24 +1,43 @@
-# Cubezen
+<div align="center">
+  <img src="icon.svg" alt="Cubezen logo: a pixel-art grass block" width="96">
+  <h1>Cubezen</h1>
+  <p><strong>A cozy voxel valley to study in, with piano that writes itself.</strong></p>
+  <p>
+    <a href="https://jgalilea.github.io/cubezen/"><strong>Open Cubezen</strong></a> ·
+    <a href="#features">Features</a> ·
+    <a href="#run-it-locally">Run it locally</a> ·
+    <a href="#development">Development</a>
+  </p>
+</div>
 
-Cozy blocky lofi for study and play: a 3D voxel valley with a cabin, a campfire and a river that changes with the time of day and the seasons, with generative piano, rain and fire ambience, a pomodoro timer and a task list.
+![Cubezen at sunset in autumn: a cabin, a campfire, a farm plot and a river, with the timer, world, tasks and music widgets over the scene](docs/screenshots/hero.jpg)
 
-**Live:** https://jagalile.github.io/cubezen/
+Cubezen is a background page for focused work. Leave it open on a second screen: a 3D valley with a cabin, a campfire and a river changes with the time of day and the seasons, while generative piano, rain and fire play over it. A pomodoro timer and a task list sit on top, and all of it hides away when you just want the view.
+
+It runs entirely in the browser, with no sign-up and nothing to install.
 
 All art and music are original. The music is composed and synthesised live in the browser with the Web Audio API, so there are no audio files and no third-party copyright. Not affiliated with Mojang or Microsoft.
 
 ## Features
 
-- **A living valley**: a river with a dock and a painted rowboat, a farm plot with seasonal crops, a cabin with a smoking chimney, a balcony, a terrace under string lights and flower boxes, paths with lanterns and a signpost leading to the dock and the mine, a campfire on a stone hearth, a camping tent, a mine dug into the hillside with a loaded minecart and piles of ore, trees, bushes and flowers, and hills that carry the river off into the haze. A cat sleeps by the fire, and now and then a rabbit, a flock of birds, a family of ducks or a deer coming down to drink passes by.
+- **A living valley**: a river with a dock and a painted rowboat, a farm plot with seasonal crops, a cabin with a smoking chimney, a balcony, a terrace under string lights and flower boxes, paths with lanterns and a signpost leading to the dock and the mine, a campfire on a stone hearth, a camping tent, a mine dug into the hillside with a loaded minecart and piles of ore, trees, bushes and flowers, and hills that carry the river off into the haze. A cat sleeps by the fire, butterflies come out on warm days, and now and then a rabbit, a flock of birds, a family of ducks or a deer coming down to drink passes by.
 - **Day and night**: synced to your clock by default, or a 20-minute cycle, or fixed at day, sunset or night, with sun, moon, stars, clouds and fireflies.
 - **Seasons**: picked automatically from the date (the default) or chosen by hand. Colours, particles (petals, leaves, snow) and details of the world change; in winter the river freezes.
 - **Generative music**: ever-new piano pieces, each with its own mode, motif and structure, in the spirit of calm game soundtracks.
 - **Ambience**: rain and fire with their own volume; the rain and the campfire in the scene follow their sliders.
-- **Pomodoro**: 25-minute focus with 5 and 15-minute breaks, a chime when time is up and a count of today's sessions.
+- **Pomodoro**: 25-minute focus with 5 and 15-minute breaks, a chime when time is up and a count of today's sessions. Every fourth session leads to the long break.
 - **Tasks**: a simple list for the session.
 - **Your own layout**: every widget can be minimized (`−`) or hidden (`×`); the music bar shrinks to just play/pause and the track; the **Widgets** menu brings hidden ones back, and the layout is remembered.
 - **Zen mode**: hides the interface and leaves only the landscape.
 
-Preferences, tasks and stats are saved in your browser (`localStorage`); there are no accounts and no server.
+### Through the year
+
+| | |
+| --- | --- |
+| ![Spring: blossom trees over the valley, with a deer drinking at the river](docs/screenshots/spring.jpg) | ![Summer: a green valley in daylight with ripe wheat on the farm](docs/screenshots/summer.jpg) |
+| ![Autumn: red and orange trees under a pink sunset sky](docs/screenshots/autumn.jpg) | ![Winter: a snowy night, the river frozen and the cabin lit from inside](docs/screenshots/winter.jpg) |
+
+Screenshots are from the real app, with sample tasks. The four seasons are shown in Zen mode.
 
 ### Shortcuts
 
@@ -28,26 +47,36 @@ Preferences, tasks and stats are saved in your browser (`localStorage`); there a
 | `H` | Zen mode |
 | `F` | Fullscreen |
 
-## Development
+### Privacy
 
-No build step and nothing to install: Three.js is loaded from a CDN through an import map. The 3D world uses ES modules, so serve the folder (opening `index.html` from disk won't load it):
+Preferences, tasks and stats are saved in your browser (`localStorage`); there are no accounts and no server. The page does load Three.js from jsDelivr and its fonts from Google Fonts.
+
+## Run it locally
+
+The hosted version at https://jgalilea.github.io/cubezen/ is all you need to use it. To run your own copy you only need Python, or any other static file server, and a browser with WebGL:
 
 ```sh
+git clone https://github.com/jgalilea/cubezen.git
+cd cubezen
 python3 -m http.server 8000
 ```
 
-then open http://localhost:8000.
+Then open http://localhost:8000. The 3D world uses ES modules, so serve the folder: opening `index.html` from disk leaves you with the interface but no world.
+
+## Development
+
+No build step and nothing to install: Three.js is loaded from a CDN through an import map.
 
 ### URL parameters
 
-Handy for previews and screenshots:
+Handy for previews and screenshots. `time`, `t`, `season` and `fire` take priority over the World panel and the Fire slider, so those controls won't change that value while the parameter is in the URL.
 
 | Parameter | Effect |
 | --- | --- |
 | `?time=day\|sunset\|night\|clock\|cycle` | Fix the time mode |
-| `?t=0.72` | A specific time in the cycle (0 = midnight, 0.5 = noon) |
+| `?t=0.72` | Start the cycle at a specific time (0 = midnight, 0.5 = noon) |
 | `?season=spring\|summer\|autumn\|winter` | Fix the season |
-| `?fire=0.8` | Initial campfire intensity (0 to 1) |
+| `?fire=0.8` | Fix the campfire intensity (0 to 1) |
 | `?critter=rabbit\|birds\|ducks\|deer&advance=10` | Spawn a visitor and fast-forward it N seconds |
 | `?shot` | Preserve the drawing buffer so the canvas can be read (screenshots) |
 
@@ -63,7 +92,12 @@ Handy for previews and screenshots:
 - `js/world/textures.js`: procedural 16×16 px textures, repainted each season
 - `js/world/props.js`: the farm's fence, scarecrow, pumpkins and hay bales, the dock with its rowboat, the camp (tent, woodpile, crates), the mine's yard (rails, minecart, tools, ore) and the bushes and fences along the path
 - `js/world/critters.js`: the cat, the butterflies and the visitors
+- `docs/screenshots/`: the images in this README
 
 ## Deployment
 
 GitHub Pages serves the `main` branch straight from the repository root.
+
+## License
+
+Copyright (C) 2026 Javier Galilea. Released under the [GNU General Public License v3.0](LICENSE).

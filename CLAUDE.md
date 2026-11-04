@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-Cubezen: a static "cozy blocky lofi" background page for studying (3D voxel valley, generative piano, rain/fire ambience, pomodoro, tasks). Deployed by GitHub Pages straight from `main` (repo root) at https://jagalile.github.io/cubezen/ — pushing to `main` is deploying. Check a deploy with `gh api repos/jagalile/cubezen/pages/builds/latest`.
+Cubezen: a static "cozy blocky lofi" background page for studying (3D voxel valley, generative piano, rain/fire ambience, pomodoro, tasks). Deployed by GitHub Pages straight from `main` (repo root) at https://jgalilea.github.io/cubezen/ — pushing to `main` is deploying. Check a deploy with `gh api repos/{owner}/{repo}/pages/builds/latest`.
 
 **Legal constraint:** everything must stay original. Never use Minecraft music, textures, logo or mobs, and keep the "Original music & art. Not affiliated with Mojang or Microsoft." notice. Don't embed hidden/audio-only YouTube players (violates YouTube API policies).
 
