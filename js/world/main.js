@@ -591,8 +591,8 @@ requestAnimationFrame(frame);
 
 window.Scene = {
   setRain(level) { state.rain = Math.max(0, Math.min(1, level)); },
-  setFire(level) { state.fire = Math.max(0, Math.min(1, level)); },
-  setTimeMode(mode) { if (!params.get('time')) state.timeMode = mode; },
+  setFire(level) { if (!params.get('fire')) state.fire = Math.max(0, Math.min(1, level)); },
+  setTimeMode(mode) { if (!params.get('time') && !params.get('t')) state.timeMode = mode; },
   setSeason(season) { if (!params.get('season')) state.season = season; },
   get state() { return { ...state, season: state.season, resolved: state.resolvedSeason }; },
 };
