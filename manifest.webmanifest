@@ -1,7 +1,7 @@
 {
   "name": "Cubezen — cozy blocky lofi",
   "short_name": "Cubezen",
-  "description": "A cozy voxel valley to study in, with generative piano, rain, a campfire, a pomodoro timer and tasks.",
+  "description": "A cozy voxel world to study in (a valley with a campfire or a neon city street), with generative piano, rain, a pomodoro timer and tasks.",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",

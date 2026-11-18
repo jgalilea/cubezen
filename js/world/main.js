@@ -417,6 +417,9 @@ function switchScene(name) {
     canvas.classList.remove('ready');
     await new Promise((r) => setTimeout(r, 600));
     try { await loadScene(name); } catch (e) { console.error(e); }
+    // The page behind the canvas shows the new scene's sky while it fades in.
+    const k = sampleKeys(current.keys, state.t);
+    document.documentElement.style.setProperty('--sky', `linear-gradient(#${k.top.getHexString()}, #${k.hor.getHexString()})`);
     canvas.classList.add('ready');
   });
 }

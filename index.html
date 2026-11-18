@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Cubezen — cozy blocky lofi</title>
-  <meta name="description" content="Cozy blocky lofi for study & play. A pixel campfire, soft generative piano, rain and a pomodoro timer.">
+  <meta name="description" content="Cozy blocky lofi for study & play. A pixel valley with a campfire or a neon city street, soft generative piano, rain and a pomodoro timer.">
   <meta name="theme-color" content="#11101f">
   <link rel="icon" href="icon.svg" type="image/svg+xml">
   <link rel="manifest" href="manifest.webmanifest">
@@ -16,11 +16,16 @@
     // Until the 3D world draws its first frame (about a second), paint the sky of the chosen
     // time of day, so a sunny Clock doesn't open on a night-blue screen.
     (() => {
-      const SKY = [[0, '#0a0f2a', '#232a5e'], [0.23, '#2c3270', '#9c6a88'], [0.29, '#5a78c8', '#ffc29a'], [0.36, '#4a8de6', '#c2e2ff'],
-        [0.63, '#4a88e0', '#ffe2bc'], [0.7, '#7464c0', '#ffa688'], [0.75, '#3c3480', '#d4748e'], [0.79, '#171c4e', '#4b3f78']];
+      const SKIES = {
+        valley: [[0, '#0a0f2a', '#232a5e'], [0.23, '#2c3270', '#9c6a88'], [0.29, '#5a78c8', '#ffc29a'], [0.36, '#4a8de6', '#c2e2ff'],
+          [0.63, '#4a88e0', '#ffe2bc'], [0.7, '#7464c0', '#ffa688'], [0.75, '#3c3480', '#d4748e'], [0.79, '#171c4e', '#4b3f78']],
+        city: [[0, '#0c0a24', '#4a1e5a'], [0.23, '#24245a', '#93517a'], [0.3, '#6a80c0', '#ecc0b8'], [0.4, '#6a8ccc', '#cad6e6'],
+          [0.63, '#6a8ac8', '#f0d8c4'], [0.7, '#6a4eb0', '#ff8e8a'], [0.75, '#2c2070', '#c25890'], [0.79, '#130e34', '#4e2262']],
+      };
       const q = new URLSearchParams(location.search);
-      let mode = q.get('time');
-      try { mode = mode || JSON.parse(localStorage.getItem('cubezen.world')).time; } catch {}
+      let mode = q.get('time'), scene = q.get('scene');
+      try { const w = JSON.parse(localStorage.getItem('cubezen.world')); mode = mode || w.time; scene = scene || w.scene; } catch {}
+      const SKY = SKIES[scene] || SKIES.valley;
       const now = new Date();
       const t = q.get('t') ? Number(q.get('t')) : { day: 0.45, sunset: 0.715, night: 0.92 }[mode] ?? (now.getHours() + now.getMinutes() / 60) / 24;
       const [, top, hor] = SKY.filter((k) => k[0] <= t).pop();
@@ -111,6 +116,10 @@
       <section class="panel widget" id="world" aria-label="World">
         <div class="head"><h2>World</h2></div>
         <div class="fold">
+          <div class="tabs left" id="scene-tabs">
+            <button class="tab" data-scene="valley" title="River valley with a cabin and a campfire">Valley</button>
+            <button class="tab" data-scene="city" title="Neon shopping street with a yakitori stall">City</button>
+          </div>
           <div class="tabs left" id="time-tabs">
             <button class="tab" data-time="clock" title="Follow your local time">Clock</button>
             <button class="tab" data-time="cycle" title="Full day every 20 minutes">Cycle</button>
