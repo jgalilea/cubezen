@@ -1,14 +1,8 @@
 // Procedural 16x16 pixel textures (all original), repainted per season.
 import * as THREE from 'three';
 
-export function rng(seed) {
-  return () => {
-    seed = (seed + 0x6D2B79F5) | 0;
-    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
+import { rng } from '../common.js';
+export { rng };
 
 export const T = {
   grassTop: 0, grassSide: 1, dirt: 2, stone: 3, sand: 4, logSide: 5, logTop: 6, leaves0: 7,

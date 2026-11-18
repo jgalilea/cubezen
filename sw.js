@@ -2,11 +2,12 @@
 // Our own files go network-first (so a deploy shows up on the next load) and fall back to the
 // cache when offline. Three.js comes from a versioned CDN URL that never changes: cache-first.
 // Bump VERSION when the list below changes.
-const VERSION = 'cubezen-v1';
+const VERSION = 'cubezen-v2';
 const SHELL = [
   './', 'index.html', 'manifest.webmanifest', 'icon.svg', 'css/style.css',
   'js/app.js', 'js/audio.js', 'js/composer.js',
-  'js/world/main.js', 'js/world/build.js', 'js/world/textures.js', 'js/world/props.js', 'js/world/critters.js',
+  'js/world/main.js', 'js/world/common.js',
+  'js/world/valley/index.js', 'js/world/valley/build.js', 'js/world/valley/textures.js', 'js/world/valley/props.js', 'js/world/valley/critters.js',
   'fonts/vt323.woff2', 'fonts/press-start-2p.woff2',
   'icons/icon-192.png', 'icons/icon-512.png', 'icons/maskable-512.png', 'icons/apple-touch-icon.png',
 ];

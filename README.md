@@ -101,11 +101,13 @@ Handy for previews and screenshots. `time`, `t`, `season` and `fire` take priori
 - `js/app.js`: mixer, sleep timer, pomodoro and its settings, tasks, world panel, widget layout, shortcuts and install
 - `js/composer.js`: generative composer (modes, voicings, motifs, piece structure); pure JS, no audio
 - `js/audio.js`: synthesised piano and pad that perform the composer's pieces, plus rain and fire
-- `js/world/main.js`: rendering, sky, day/night lighting, seasons and particles
-- `js/world/build.js`: voxel world generation and meshing with ambient occlusion
-- `js/world/textures.js`: procedural 16×16 px textures, repainted each season
-- `js/world/props.js`: the farm's fence, scarecrow, pumpkins and hay bales, the dock with its rowboat, the camp (tent, woodpile, crates), the mine's yard (rails, minecart, tools, ore) and the bushes and fences along the path
-- `js/world/critters.js`: the cat, the butterflies and the visitors
+- `js/world/main.js`: the engine: rendering, sky, day/night lighting, seasons, rain and particles, and loading the scene
+- `js/world/common.js`: helpers shared by the scenes (glows, clouds, keyframes, disposal)
+- `js/world/valley/index.js`: the valley scene: water, campfire, lanterns, clouds, fireflies, and its lighting keyframes
+- `js/world/valley/build.js`: voxel world generation and meshing with ambient occlusion
+- `js/world/valley/textures.js`: procedural 16×16 px textures, repainted each season
+- `js/world/valley/props.js`: the farm's fence, scarecrow, pumpkins and hay bales, the dock with its rowboat, the camp (tent, woodpile, crates), the mine's yard (rails, minecart, tools, ore) and the bushes and fences along the path
+- `js/world/valley/critters.js`: the cat, the butterflies and the visitors
 - `docs/screenshots/`: the images in this README
 
 ## Deployment
