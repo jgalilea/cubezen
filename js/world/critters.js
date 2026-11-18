@@ -1,6 +1,6 @@
 // Small voxel animals that bring the valley to life without stealing attention:
-// a cat asleep by the fire, butterflies on warm days, and an occasional visitor
-// (rabbit, birds, ducks or a deer) every so often.
+// a cat asleep by the fire, butterflies on warm days, and visitors that drop by, up to two at
+// a time: rabbits, birds, ducks, a deer and a fox by day; an owl and a hedgehog at night.
 import * as THREE from 'three';
 
 const mats = new Map();
@@ -67,7 +67,7 @@ function makeCat() {
 
 function makeRabbit(snowy) {
   const g = new THREE.Group();
-  const fur = snowy ? '#eeeeee' : '#a08466', inner = snowy ? '#e0c8c8' : '#c9a98a';
+  const fur = snowy ? '#eeeeee' : '#c49a72', inner = snowy ? '#e0c8c8' : '#e8c4a8';
   box(g, 0.42, 0.3, 0.28, fur, 0, 0.18, 0);
   const head = pivot(g, 0.24, 0.32, 0);
   box(head, 0.22, 0.2, 0.2, fur, 0.04, 0, 0);
@@ -141,8 +141,114 @@ function makeButterfly(color) {
   return { g, wings };
 }
 
+function makeFox() {
+  const g = new THREE.Group();
+  const coat = '#e0702c', light = '#f6ece0', dark = '#3a2620';
+  const body = box(g, 0.8, 0.32, 0.3, coat, 0, 0.55, 0);
+  box(body, 0.5, 0.06, 0.26, light, 0.1, -0.15, 0);                  // pale belly
+  const head = pivot(g, 0.44, 0.72, 0);
+  box(head, 0.3, 0.26, 0.28, coat, 0.06, 0, 0);
+  box(head, 0.18, 0.12, 0.16, light, 0.26, -0.06, 0);                // muzzle
+  box(head, 0.05, 0.05, 0.05, dark, 0.36, -0.03, 0);                 // nose
+  box(head, 0.06, 0.14, 0.09, coat, 0.0, 0.18, -0.09);
+  box(head, 0.06, 0.14, 0.09, coat, 0.0, 0.18, 0.09);
+  box(head, 0.061, 0.05, 0.09, dark, 0.0, 0.24, -0.09);
+  box(head, 0.061, 0.05, 0.09, dark, 0.0, 0.24, 0.09);
+  box(head, 0.02, 0.04, 0.04, dark, 0.21, 0.05, -0.08);
+  box(head, 0.02, 0.04, 0.04, dark, 0.21, 0.05, 0.08);
+  const tail = pivot(g, -0.4, 0.6, 0);
+  box(tail, 0.5, 0.18, 0.18, coat, -0.25, -0.02, 0);
+  box(tail, 0.14, 0.16, 0.16, light, -0.52, -0.02, 0);
+  const legs = [[0.28, -0.1], [0.28, 0.1], [-0.28, -0.1], [-0.28, 0.1]].map(([x, z]) => {
+    const p = pivot(g, x, 0.42, z);
+    box(p, 0.09, 0.42, 0.09, dark, 0, -0.2, 0);
+    return p;
+  });
+  blob(g, 1.1);
+  g.scale.setScalar(1.35);
+  return { g, head, tail, legs, body };
+}
+
+function makeOwl() {
+  const g = new THREE.Group();
+  const feather = '#a07a56', light = '#e6d2ac';
+  const body = box(g, 0.32, 0.4, 0.32, feather, 0, 0.2, 0);
+  box(body, 0.02, 0.26, 0.22, light, 0.16, -0.04, 0);                 // speckled chest
+  const head = pivot(g, 0, 0.5, 0);
+  box(head, 0.32, 0.26, 0.34, feather, 0, 0, 0);
+  box(head, 0.02, 0.18, 0.28, light, 0.16, -0.01, 0);                 // face disc
+  // Eyes shine in the dark (unlit material), so the owl reads at night.
+  const eyeMat = new THREE.MeshBasicMaterial({ color: '#ffd24a' });
+  const eyes = [-0.07, 0.07].map((z) => {
+    const e = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.08, 0.08), eyeMat);
+    e.position.set(0.175, 0.02, z);
+    head.add(e);
+    return e;
+  });
+  box(head, 0.04, 0.05, 0.04, '#e8a030', 0.18, -0.06, 0);
+  box(head, 0.08, 0.08, 0.06, feather, 0, 0.16, -0.12);               // ear tufts
+  box(head, 0.08, 0.08, 0.06, feather, 0, 0.16, 0.12);
+  const wings = [-1, 1].map((side) => {
+    const w = pivot(g, 0, 0.36, side * 0.16);
+    box(w, 0.26, 0.04, 0.34, '#6e523a', 0, 0, side * 0.17);
+    return { w, side };
+  });
+  for (const w of wings) w.w.visible = false;
+  g.scale.setScalar(2.1);
+  return { g, head, eyes, wings };
+}
+
+function makeHedgehog() {
+  const g = new THREE.Group();
+  const spikes = '#7a604a', tip = '#b09478', face = '#e2c4a2';
+  const body = box(g, 0.5, 0.3, 0.4, spikes, 0, 0.17, 0);
+  for (const [x, y, z] of [[-0.1, 0.17, -0.12], [0.06, 0.2, 0.1], [-0.18, 0.12, 0.12], [0.1, 0.16, -0.12], [-0.02, 0.24, 0]]) box(body, 0.06, 0.06, 0.06, tip, x, y - 0.17 + 0.12, z);
+  const head = pivot(g, 0.27, 0.12, 0);
+  box(head, 0.2, 0.17, 0.24, face, 0, 0, 0);
+  box(head, 0.1, 0.08, 0.1, face, 0.12, -0.03, 0);
+  box(head, 0.04, 0.04, 0.04, '#201814', 0.18, -0.02, 0);
+  box(head, 0.02, 0.03, 0.03, '#201814', 0.1, 0.04, -0.08);
+  box(head, 0.02, 0.03, 0.03, '#201814', 0.1, 0.04, 0.08);
+  blob(g, 0.8);
+  g.scale.setScalar(1.9);
+  return { g, head, body };
+}
+
 export function createCritters(scene, world) {
   const { ground, riverX, fire } = world;
+  // Walking height. world.ground() jumps a whole block at each step, so animals would pop up or
+  // down. Here they stay flat across a block, rise over the last stretch before a higher one and
+  // step down just past the edge of a lower one, so climbs read as a hop rather than a teleport.
+  const REACH = 0.85;                                  // how far before an edge the climb starts
+  const walkY = (x, z) => {
+    const cx = Math.floor(x), cz = Math.floor(z), own = ground(x, z);
+    let y = own;
+    for (let i = -1; i <= 1; i++) for (let j = -1; j <= 1; j++) {
+      if (!i && !j) continue;
+      const h = ground(cx + i + 0.5, cz + j + 0.5);
+      if (h <= y) continue;
+      // Distance from (x, z) to that neighbouring block's footprint.
+      const dx = Math.max(cx + i - x, 0, x - (cx + i + 1)), dz = Math.max(cz + j - z, 0, z - (cz + j + 1));
+      const s = Math.max(0, 1 - Math.hypot(dx, dz) / REACH);
+      y = Math.max(y, own + (h - own) * s * s * (3 - 2 * s));
+    }
+    return y;
+  };
+  // Places a walking animal: its height follows walkY() with a little lag, quicker going up than
+  // down so it never sinks into a step, and the body leans with the slope it is climbing.
+  function feet() {
+    let y = null, lean = 0;
+    return (g, x, z, dt, lift = 0) => {
+      const target = walkY(x, z);
+      if (y === null || Math.abs(target - y) > 3) y = target;
+      y += (target - y) * Math.min(1, dt * (target > y ? 9 : 5));
+      const fx = Math.cos(g.rotation.y), fz = -Math.sin(g.rotation.y);
+      const slope = (walkY(x + fx * 0.45, z + fz * 0.45) - walkY(x - fx * 0.45, z - fz * 0.45)) / 0.9;
+      lean += (Math.atan(slope) * 0.45 - lean) * Math.min(1, dt * 6);
+      g.position.set(x, y + lift, z);
+      g.rotation.z = lean;
+    };
+  }
   const waterY = world.WL + 1 - 0.14;
 
   // ---- the cat, always asleep by the fire ----
@@ -171,7 +277,8 @@ export function createCritters(scene, world) {
         { x: 96, z: z0 + (Math.random() - 0.5) * 6, rest: 0 },
       ];
       let x = 95, z = z0, phase = 'pause', timer = 0.4, from = null, to = null, stop = 0;
-      r.g.position.set(x, ground(x, z), z);
+      r.g.position.set(x, walkY(x, z), z);
+      const place = feet();
       return {
         obj: r.g,
         update(dt, time) {
@@ -181,7 +288,7 @@ export function createCritters(scene, world) {
             x = lerp(from.x, to.x, p);
             z = lerp(from.z, to.z, p);
             const lift = Math.sin(p * Math.PI) * 0.35;
-            r.g.position.set(x, ground(x, z) + lift, z);
+            place(r.g, x, z, dt, lift);
             r.shadow.position.y = 0.02 - lift / 1.5;
             if (timer <= 0) { phase = 'pause'; timer = 0.08 + Math.random() * 0.3; }
             return true;
@@ -265,10 +372,14 @@ export function createCritters(scene, world) {
 
     deer() {
       const d = makeDeer();
-      const zt = 38 + Math.random() * 12;              // the stretch of river in view
-      const bank = { x: riverX(zt) - 4.3, z: zt };
-      const forest = { x: bank.x - 12, z: zt + (Math.random() - 0.5) * 6 };
+      // It drinks on the meadow-side bank, upstream of the dock, so it stands in the open.
+      const zt = 30 + Math.random() * 7;
+      let bx = riverX(zt) + 2;                           // first dry ground beside the water
+      while (ground(bx, zt) <= world.WL && bx < riverX(zt) + 14) bx += 0.5;
+      const bank = { x: bx + 0.4, z: zt };
+      const forest = { x: bank.x + 14, z: zt - 6 - Math.random() * 6 };
       let phase = 'in', t = 0, drink = 9 + Math.random() * 6;
+      const place = feet();
       const walkTime = Math.hypot(bank.x - forest.x, bank.z - forest.z) / 1.1;
       return {
         obj: d.g,
@@ -279,8 +390,9 @@ export function createCritters(scene, world) {
             const p = Math.min(1, t / walkTime);
             const [a, b] = phase === 'in' ? [forest, bank] : [bank, forest];
             const x = lerp(a.x, b.x, p), z = lerp(a.z, b.z, p);
-            d.g.position.set(x, ground(x, z), z);
             d.g.rotation.y = heading(b.x - a.x, b.z - a.z);
+            if (phase === 'in' && p > 0.97) d.g.rotation.y = heading(-1, 0);   // turn to face the water
+            place(d.g, x, z, dt);
             d.legs.forEach((l, i) => { l.rotation.z = Math.sin(time * 6 + (i % 2 ? Math.PI : 0) + (i > 1 ? Math.PI / 2 : 0)) * 0.35; });
             d.neck.rotation.z = 0;
             if (p >= 1) {
@@ -300,22 +412,133 @@ export function createCritters(scene, world) {
     },
   };
 
-  let active = null, nextIn = 6 + Math.random() * 6, lastKind = null;
+  // Walk a model along waypoints at a given speed, pausing where a point asks for it.
+  // gait(model, moving, time, dt) animates legs and head; returns false once it's off stage.
+  function walker(model, points, speed, gait) {
+    let i = 0, x = points[0].x, z = points[0].z, wait = 0;
+    model.g.position.set(x, walkY(x, z), z);
+    const place = feet();
+    return {
+      obj: model.g,
+      update(dt, time) {
+        if (wait > 0) { wait -= dt; gait(model, false, time, dt, points[i]); return true; }
+        const to = points[i + 1];
+        if (!to) return false;
+        const dx = to.x - x, dz = to.z - z, dist = Math.hypot(dx, dz);
+        if (dist < 0.05) {
+          i++;
+          wait = to.wait || 0;
+          if (to.face !== undefined) model.g.rotation.y = to.face;
+          return true;
+        }
+        const step = Math.min(dist, speed * dt);
+        x += (dx / dist) * step; z += (dz / dist) * step;
+        model.g.rotation.y = heading(dx, dz);
+        place(model.g, x, z, dt);
+        gait(model, true, time, dt, to);
+        return true;
+      },
+    };
+  }
+  const legSwing = (legs, time, rate, amp) => legs.forEach((l, i) => { l.rotation.z = Math.sin(time * rate + (i % 2 ? Math.PI : 0) + (i > 1 ? Math.PI / 2 : 0)) * amp; });
+
+  Object.assign(VISITORS, {
+    // A fox trots across the meadow, sits a while looking at the valley, then goes on its way.
+    fox() {
+      const f = makeFox();
+      // In from the right-hand woods, a sit in the meadow between the fire and the mine path,
+      // then off up the slope.
+      const z = 68 + Math.random() * 2, mid = 78 + Math.random() * 8;
+      return walker(f, [{ x: 104, z: z + 3 }, { x: mid, z, wait: 7 + Math.random() * 5, face: heading(-0.3, 1) }, { x: 99, z: 60 }, { x: 110, z: 58 }], 2.2, (m, moving, time) => {
+        legSwing(m.legs, time, 11, moving ? 0.5 : 0);
+        m.tail.rotation.y = Math.sin(time * (moving ? 6 : 1.5)) * (moving ? 0.25 : 0.4);
+        m.body.position.y = moving ? 0.55 + Math.abs(Math.sin(time * 11)) * 0.03 : 0.5;
+        m.head.rotation.y = moving ? 0 : Math.sin(time * 0.6) * 0.5;
+      });
+    },
+
+    // A hedgehog shuffles through the meadow at night, stopping to sniff.
+    hedgehog() {
+      const h = makeHedgehog();
+      // Out of the long grass, a visit to the warm side of the campfire, and back again.
+      const F = fire, dz = Math.random() * 2;
+      const pts = [
+        { x: 34, z: 82 + dz },
+        { x: 50, z: 80 + dz, wait: 3 + Math.random() * 2 },
+        { x: F.x - 1.7, z: F.z + 1.7, wait: 6 + Math.random() * 4 },
+        { x: F.x - 8, z: F.z - 1, wait: 2 + Math.random() * 2 },
+        { x: 34, z: 74 },
+      ];
+      return walker(h, pts, 0.8, (m, moving, time) => {
+        m.body.position.y = 0.17 + (moving ? Math.abs(Math.sin(time * 14)) * 0.015 : 0);
+        m.head.rotation.z = moving ? 0 : -0.25 + Math.sin(time * 5) * 0.08;   // nose down, sniffing
+      });
+    },
+
+    // An owl glides in to the scarecrow's hat, looks around for a while and flies off.
+    owl() {
+      const o = makeOwl();
+      const perch = world.perch;
+      const start = { x: perch.x - 40, y: perch.y + 14, z: perch.z - 30 }, end = { x: perch.x + 45, y: perch.y + 16, z: perch.z - 25 };
+      let phase = 'in', t = 0;
+      const stay = 30 + Math.random() * 20, flyTime = 6;
+      o.g.rotation.y = heading(0, 1);
+      const fly = (a, b, p, time) => {
+        const e = p * p * (3 - 2 * p);
+        o.g.position.set(lerp(a.x, b.x, e), lerp(a.y, b.y, e) + Math.sin(p * Math.PI) * 3, lerp(a.z, b.z, e));
+        o.g.rotation.y = heading(b.x - a.x, b.z - a.z);
+        for (const w of o.wings) { w.w.visible = true; w.w.rotation.x = w.side * Math.sin(time * 10) * 0.8; }
+      };
+      return {
+        obj: o.g,
+        update(dt, time) {
+          t += dt;
+          if (phase === 'in') {
+            fly(start, perch, Math.min(1, t / flyTime), time);
+            if (t >= flyTime) { phase = 'perch'; t = 0; for (const w of o.wings) w.w.visible = false; o.g.rotation.y = heading(0, 1); }
+          } else if (phase === 'perch') {
+            o.g.position.set(perch.x, perch.y, perch.z);
+            // Slow head turns, with the occasional blink.
+            const look = Math.sin(t * 0.35) + (Math.sin(t * 0.13) > 0.8 ? 0.6 : 0);
+            o.head.rotation.y = Math.max(-1.3, Math.min(1.3, look * 1.1));
+            const blink = (t % 4.3) < 0.15;
+            for (const e of o.eyes) e.scale.y = blink ? 0.15 : 1;
+            if (t > stay) { phase = 'out'; t = 0; }
+          } else {
+            fly(perch, end, Math.min(1, t / flyTime), time);
+            if (t >= flyTime) return false;
+          }
+          return true;
+        },
+      };
+    },
+  });
+
+  // Up to two visitors at once (never two of the same kind), with short breaks in between.
+  const actives = [];
+  let nextIn = 3 + Math.random() * 4, lastKind = null;
 
   function eligible(env) {
-    const day = env.night < 0.5, dry = env.rain < 0.5;
+    const day = env.night < 0.5, dusk = env.night < 0.8, night = env.night > 0.45, dry = env.rain < 0.5;
     const list = [];
-    if (day && dry) list.push(['rabbit', 3], ['birds', 3]);
+    if (day && dry) list.push(['rabbit', 3], ['birds', 2]);
     if (day && dry && env.season !== 'winter') list.push(['ducks', 2]);
-    if (day) list.push(['deer', 1.5]);
-    return list.filter(([k]) => k !== lastKind || list.length === 1);
+    if (day) list.push(['deer', 2]);
+    if (dusk && dry) list.push(['fox', 2.5]);
+    if (night) list.push(['owl', 3]);
+    if (night && dry && env.season !== 'winter') list.push(['hedgehog', 2.5]);
+    const busy = new Set(actives.map((a) => a.kind));
+    const free = list.filter(([k]) => !busy.has(k));
+    const fresh = free.filter(([k]) => k !== lastKind);
+    return fresh.length ? fresh : free;
   }
 
   function spawn(kind, env) {
-    if (active) { scene.remove(active.obj); active = null; }
-    active = VISITORS[kind](env);
+    const v = VISITORS[kind](env);
+    v.kind = kind;
     lastKind = kind;
-    scene.add(active.obj);
+    actives.push(v);
+    scene.add(v.obj);
   }
 
   return {
@@ -338,16 +561,17 @@ export function createCritters(scene, world) {
         for (const w of b.wings) w.w.rotation.x = w.side * flap;
       });
 
-      if (active) {
-        if (!active.update(dt, time)) {
-          scene.remove(active.obj);
-          active = null;
-          nextIn = 15 + Math.random() * 20;
+      for (let i = actives.length - 1; i >= 0; i--) {
+        if (!actives[i].update(dt, time)) {
+          scene.remove(actives[i].obj);
+          actives.splice(i, 1);
+          nextIn = Math.min(nextIn, 6 + Math.random() * 8);
         }
-        return;
       }
+      if (actives.length >= 2) return;
       nextIn -= dt;
       if (nextIn > 0) return;
+      nextIn = 10 + Math.random() * 12;                     // gap before a second one may join
       const options = eligible(env);
       if (!options.length) { nextIn = 10; return; }
       let roll = Math.random() * options.reduce((s, [, w]) => s + w, 0);

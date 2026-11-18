@@ -18,7 +18,7 @@ python3 -m http.server 8931
 
 Port 8765 belongs to another of the user's projects — don't use or kill it.
 
-Preview overrides via URL: `?time=day|sunset|night|clock|cycle`, `?t=0.72` (0 = midnight, 0.5 = noon), `?season=spring|summer|autumn|winter`, `?fire=0..1`, `?critter=rabbit|birds|ducks|deer&advance=N` (spawn a visitor and fast-forward N seconds), `?shot` (sets `preserveDrawingBuffer` so the canvas can be read with `toDataURL` for headless screenshots).
+Preview overrides via URL: `?time=day|sunset|night|clock|cycle`, `?t=0.72` (0 = midnight, 0.5 = noon), `?season=spring|summer|autumn|winter`, `?fire=0..1`, `?critter=rabbit|birds|ducks|deer|fox|owl|hedgehog&advance=N` (spawn a visitor and fast-forward N seconds), `?shot` (sets `preserveDrawingBuffer` so the canvas can be read with `toDataURL` for headless screenshots).
 
 ## Architecture
 

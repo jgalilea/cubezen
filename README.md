@@ -20,7 +20,7 @@ All art and music are original. The music is composed and synthesised live in th
 
 ## Features
 
-- **A living valley**: a river with a dock and a painted rowboat, a farm plot with seasonal crops, a cabin with a smoking chimney, a balcony, a terrace under string lights and flower boxes, paths with lanterns and a signpost leading to the dock and the mine, a campfire on a stone hearth, a camping tent, a mine dug into the hillside with a loaded minecart and piles of ore, trees, bushes and flowers, and hills that carry the river off into the haze. A cat sleeps by the fire, butterflies come out on warm days, and now and then a rabbit, a flock of birds, a family of ducks or a deer coming down to drink passes by.
+- **A living valley**: a river with a dock and a painted rowboat, a farm plot with seasonal crops, a cabin with a smoking chimney, a balcony, a terrace under string lights and flower boxes, paths with lanterns and a signpost leading to the dock and the mine, a campfire on a stone hearth, a camping tent, a mine dug into the hillside with a loaded minecart and piles of ore, trees, bushes and flowers, and hills that carry the river off into the haze. A cat sleeps by the fire, butterflies come out on warm days, and visitors drop by, up to two at a time: a rabbit, a flock of birds, a family of ducks, a deer coming down to drink or a fox by day, and at night an owl on the scarecrow or a hedgehog warming up by the fire.
 - **Day and night**: synced to your clock by default, or a 20-minute cycle, or fixed at day, sunset or night, with sun, moon, stars, clouds and fireflies.
 - **Seasons**: picked automatically from the date (the default) or chosen by hand. Colours, particles (petals, leaves, snow) and details of the world change; in winter the river freezes.
 - **Generative music**: ever-new piano pieces, each with its own mode, motif and structure, in the spirit of calm game soundtracks.
@@ -49,7 +49,7 @@ Screenshots are from the real app, with sample tasks. The four seasons are shown
 
 ### Privacy
 
-Preferences, tasks and stats are saved in your browser (`localStorage`); there are no accounts and no server. The page does load Three.js from jsDelivr and its fonts from Google Fonts.
+Preferences, tasks and stats are saved in your browser (`localStorage`); there are no accounts and no server. The page does load Three.js from jsDelivr; the fonts are served from the repository.
 
 ## Run it locally
 
@@ -77,13 +77,14 @@ Handy for previews and screenshots. `time`, `t`, `season` and `fire` take priori
 | `?t=0.72` | Start the cycle at a specific time (0 = midnight, 0.5 = noon) |
 | `?season=spring\|summer\|autumn\|winter` | Fix the season |
 | `?fire=0.8` | Fix the campfire intensity (0 to 1) |
-| `?critter=rabbit\|birds\|ducks\|deer&advance=10` | Spawn a visitor and fast-forward it N seconds |
+| `?critter=rabbit\|birds\|ducks\|deer\|fox\|owl\|hedgehog&advance=10` | Spawn a visitor and fast-forward it N seconds |
 | `?shot` | Preserve the drawing buffer so the canvas can be read (screenshots) |
 
 ### Structure
 
 - `index.html`: interface and the Three.js import map
 - `css/style.css`: pixel-art UI
+- `fonts/`: Press Start 2P and VT323 (SIL Open Font License 1.1), self-hosted so the text doesn't jump on load
 - `js/app.js`: mixer, pomodoro, tasks, world panel, widget layout and shortcuts
 - `js/composer.js`: generative composer (modes, voicings, motifs, piece structure); pure JS, no audio
 - `js/audio.js`: synthesised piano and pad that perform the composer's pieces, plus rain and fire

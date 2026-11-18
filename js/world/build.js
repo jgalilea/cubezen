@@ -260,6 +260,8 @@ export function generateWorld() {
     if (rectDist(x, z, FARM, 4) < 1 || rectDist(x, z, DOCK, 3) < 1 || rectDist(x, z, CAMP, 3) < 1) return false;
     if (x > MINE.face - 10 && x < MINE.face + 4 && z > MINE.z - 7 && z < MINE.z + 9) return false;   // the mine's mouth and yard
     if (x > 36 && x < 92 && z > 62) return false;                    // keep the foreground meadow open
+    const fromRiver = x - riverX(z);
+    if (z > 26 && z < 60 && fromRiver > 0 && fromRiver < 15) return false;   // the near bank: river view, deer
     for (let dz = -2; dz <= 2; dz++) for (let dx = -2; dx <= 2; dx++) if (pathCells.has(x + dx + ',' + (z + dz))) return false;
     if (bushes.some(([bx, bz]) => Math.abs(bx - x) < 3 && Math.abs(bz - z) < 3)) return false;
     if (get(x, H_(x, z), z) !== B.GRASS) return false;
@@ -267,43 +269,59 @@ export function generateWorld() {
     return true;
   };
   const leaf = (x, y, z, id) => { if (get(x, y, z) === B.AIR) set(x, y, z, id); };
+  const rs = rng(4242);              // tree shapes and mushrooms: own stream, so placement stays put
 
-  function tree(x, z, kind, leaves) {
-    const base = H_(x, z) + 1;
-    taken[z * W + x] = 1;
-    if (kind === 'birch') {
-      const h = 5 + Math.floor(r() * 3);
-      for (let y = 0; y < h; y++) set(x, base + y, z, B.BIRCH);
-      for (let dy = -2; dy <= 1; dy++) {
-        const rad = dy === 1 ? 1 : 2;
-        for (let dz = -rad; dz <= rad; dz++) for (let dx = -rad; dx <= rad; dx++) {
-          if (Math.abs(dx) === rad && Math.abs(dz) === rad && (dy === 1 || r() < 0.6)) continue;
-          leaf(x + dx, base + h + dy, z + dz, leaves);
-        }
-      }
-    } else if (kind === 'wide') {
-      const h = 4 + Math.floor(r() * 2);
-      for (let y = 0; y < h; y++) set(x, base + y, z, B.LOG);
-      const bx = r() < 0.5 ? 1 : -1;
-      set(x + bx, base + h, z, B.LOG);
-      set(x + bx * 2, base + h + 1, z, B.LOG);
-      for (const [cx, cy, rx, ry] of [[x, base + h + 1, 3.6, 1.6], [x + bx * 2, base + h + 2, 2.6, 1.3]]) {
-        for (let dy = -2; dy <= 2; dy++) for (let dz = -4; dz <= 4; dz++) for (let dx = -4; dx <= 4; dx++) {
-          const q = (dx * dx + dz * dz) / (rx * rx) + (dy * dy) / (ry * ry);
-          if (q <= 1 && !(q > 0.75 && r() < 0.4)) leaf(Math.round(cx + dx), cy + dy, z + dz, leaves);
-        }
-      }
-    } else {
-      const h = 4 + Math.floor(r() * 3);
-      for (let y = 0; y < h; y++) set(x, base + y, z, B.LOG);
-      const rad = 2.4 + r() * 0.8;
-      for (let dy = -2; dy <= 2; dy++) for (let dz = -3; dz <= 3; dz++) for (let dx = -3; dx <= 3; dx++) {
-        const q = (dx * dx + dz * dz + dy * dy * 1.6) / (rad * rad);
-        if (q <= 1 && !(q > 0.7 && r() < 0.35)) leaf(x + dx, base + h + dy, z + dz, leaves);
+  // Canopies are unions of soft ellipsoid lobes with only a light nibble at the rim, so they read
+  // as round, puffy masses rather than boxes or ragged cubes.
+  function canopy(lobes, leaves, floor) {
+    for (const [cx, cy, cz, rx, ry] of lobes) {
+      const R = Math.ceil(rx) + 1, RY = Math.ceil(ry) + 1;
+      for (let dy = -RY; dy <= RY; dy++) for (let dz = -R; dz <= R; dz++) for (let dx = -R; dx <= R; dx++) {
+        const X = Math.round(cx + dx), Y = Math.round(cy + dy), Z = Math.round(cz + dz);
+        if (Y < floor) continue;
+        const ex = X - cx, ey = Y - cy, ez = Z - cz;
+        const q = (ex * ex + ez * ez) / (rx * rx) + (ey * ey) / (ry * ry);
+        if (q <= 1 - (q > 0.8 ? rs() * 0.22 : 0)) leaf(X, Y, Z, leaves);
       }
     }
   }
+  function tree(x, z, kind, leaves) {
+    const base = H_(x, z) + 1;
+    taken[z * W + x] = 1;
+    const side = () => (rs() < 0.5 ? -1 : 1);
+    if (kind === 'birch') {
+      // Birches: tall white trunks with a small, high crown, so the bark stays in view.
+      const h = 6 + Math.floor(rs() * 3);
+      for (let y = 0; y < h; y++) set(x, base + y, z, B.BIRCH);
+      const top = base + h;
+      canopy([[x, top, z, 2.0, 2.2], [x + side() * 0.7, top + 1, z + side() * 0.7, 1.5, 1.4]], leaves, top - 1);
+    } else if (kind === 'wide') {
+      const h = 4 + Math.floor(rs() * 2);
+      for (let y = 0; y < h; y++) set(x, base + y, z, B.LOG);
+      const bx = side();
+      set(x + bx, base + h, z, B.LOG);
+      set(x + bx * 2, base + h + 1, z, B.LOG);
+      const top = base + h + 1, bz = side();
+      canopy([
+        [x, top, z, 3.7, 2.0],
+        [x + bx * 2.2, top + 1.2, z + bz * 0.6, 2.8, 1.9],
+        [x - bx * 1.4, top + 0.6, z - bz * 1.6, 2.4, 1.6],
+        [x + bx * 0.6, top + 2.2, z + bz * 0.4, 2.0, 1.4],
+      ], leaves, top - 2);
+    } else {
+      const h = 4 + Math.floor(rs() * 3);
+      for (let y = 0; y < h; y++) set(x, base + y, z, B.LOG);
+      const top = base + h, rad = 2.7 + rs() * 0.8;
+      const a = rs() * Math.PI * 2;
+      canopy([
+        [x, top, z, rad, rad * 0.85],
+        [x + Math.cos(a) * 1.6, top + 1.3, z + Math.sin(a) * 1.6, rad * 0.7, rad * 0.65],
+        [x - Math.cos(a) * 1.3, top - 0.6, z - Math.sin(a) * 1.3, rad * 0.75, rad * 0.6],
+      ], leaves, top - 2);
+    }
+  }
 
+  const mushrooms = [];
   // A couple of framing trees in the foreground, then a scattered forest.
   // A framing tree at each side of the view, then a forest that thickens towards the hills
   // and the edges and leaves the central meadow open.
@@ -315,9 +333,17 @@ export function generateWorld() {
     const meadow = x > 36 && x < 92 && z > 44 ? 0.03 : 0.12;
     if (r() > meadow + Math.max(back * 0.4, side * 0.6) || !canGrow(x, z)) continue;
     const v = r();
-    const kind = v < 0.15 ? 'birch' : v < 0.4 ? 'wide' : 'round';
+    const kind = v < 0.28 ? 'birch' : v < 0.5 ? 'wide' : 'round';
     const leaves = kind === 'birch' ? B.LEAVES1 : [B.LEAVES0, B.LEAVES1, B.LEAVES2][Math.floor(r() * 3)];
     tree(x, z, kind, leaves);
+    // A ring of little mushrooms at the foot of some trees.
+    if (rs() < 0.35) for (let k = 0; k < 2 + Math.floor(rs() * 3); k++) {
+      const a = rs() * Math.PI * 2, d = 1.1 + rs() * 1.2;
+      const mx = x + 0.5 + Math.cos(a) * d, mz = z + 0.5 + Math.sin(a) * d;
+      if (get(Math.floor(mx), H_(Math.floor(mx), Math.floor(mz)), Math.floor(mz)) === B.GRASS && get(Math.floor(mx), H_(Math.floor(mx), Math.floor(mz)) + 1, Math.floor(mz)) === B.AIR) {
+        mushrooms.push({ x: mx, y: H_(Math.floor(mx), Math.floor(mz)) + 1, z: mz, s: 0.6 + rs() * 0.6, red: rs() < 0.6 });
+      }
+    }
   }
 
   // ---- plant spots (filled per season) ----
@@ -329,16 +355,20 @@ export function generateWorld() {
     if (bushes.some(([bx, bz]) => bx === x && bz === z)) continue;
     if (x >= MINE.face - 7 && x < MINE.face && z >= MINE.z - 3 && z <= MINE.z + 5) continue;  // rails and ore piles
     const density = 0.12 + fbm(n1, x * 0.15 + 40, z * 0.15) * 0.35;
-    if (r() < density) plants.push({ x, y: h + 1, z, u: r(), k: r(), s: 0.75 + r() * 0.35, ox: (r() - 0.5) * 0.4, oz: (r() - 0.5) * 0.4 });
+    // Flowers grow in patches of one colour, like little meadows, instead of evenly sprinkled.
+    const bloom = fbm(n2, x * 0.18 + 7, z * 0.18 - 3), hue = fbm(n3, x * 0.11 - 20, z * 0.11 + 9);
+    const k = bloom > 0.56 ? r() * 0.35 : 0.35 + r() * 0.65;
+    if (r() < density + (bloom > 0.56 ? 0.35 : 0)) plants.push({ x, y: h + 1, z, u: r(), k, hue, s: 0.75 + r() * 0.35, ox: (r() - 0.5) * 0.4, oz: (r() - 0.5) * 0.4 });
   }
 
   return {
-    W, H, D, WL, G, get, plants, decor, chimney, riverX, naturalHeight,
+    W, H, D, WL, G, get, plants, decor, chimney, riverX, naturalHeight, mushrooms,
     ground: (x, z) => H_(Math.floor(x), Math.floor(z)) + 1,
     farm: FARM, dock: { x: dockX, z: DOCK_Z }, camp: CAMP, fences, bushes, mine: MINE,
     fire: { x: FIRE.x + 0.5, y: G + 1, z: FIRE.z + 0.5 },
     windows: [{ x: 67, y: G + 3, z: z1 + 1.2 }, { x: 72, y: G + 3, z: z1 + 1.2 }, { x: 69.5, y: G + 7, z: z1 + 1.2 }],
     cabin: CABIN, terrace: TERRACE,
+    perch: { x: FARM.x0 + 5.5, y: H_(FARM.x0 + 5, FARM.z0 + 5) + 1 + 2.42, z: FARM.z0 + 5.5 },   // the scarecrow's hat, for the owl
   };
 }
 
@@ -353,11 +383,15 @@ const FACES = [
   { n: [0, 1, 0], c: [[0, 1, 1], [1, 1, 1], [1, 1, 0], [0, 1, 0]], slot: 0 },
   { n: [0, -1, 0], c: [[0, 0, 0], [1, 0, 0], [1, 0, 1], [0, 0, 1]], slot: 1 },
 ];
-const AO = [0.5, 0.68, 0.84, 1];
+// Ambient occlusion fades towards a cool violet rather than grey, and is a little gentler.
+const AO = [0.56, 0.72, 0.86, 1];
+const AO_TINT = [0.62, 0.6, 0.86];
+const patch = valueNoise(21);
+const treeHue = valueNoise(22);
 
 export function buildTerrain(world) {
   const { W, H, D, get } = world;
-  const pos = [], nor = [], uv = [], col = [], index = [];
+  const pos = [], nor = [], uv = [], col = [], index = [], sway = [];
   const occ = (x, y, z) => { const id = get(x, y, z); return id !== B.AIR && id !== B.WATER; };
   const outside = (x, y, z) => x < 0 || z < 0 || x >= W || z >= D || y < 0;
 
@@ -373,6 +407,14 @@ export function buildTerrain(world) {
       if (!visible) continue;
 
       const [u0, v0, u1, v1] = tileUV(tiles[f.slot]);
+      const leafy = isLeaves(id);
+      // Each tree gets its own slight hue (warmer or cooler), and the sun catches canopy tops.
+      let hr = 1, hg = 1, hb = 1;
+      if (leafy) {
+        const h = fbm(treeHue, x * 0.16, z * 0.16) - 0.5;
+        const lift = f.n[1] > 0 ? 1.16 : f.n[1] < 0 ? 0.84 : 1.02;
+        hr = (1 + h * 0.3) * lift; hg = (1 + h * 0.08) * lift; hb = (1 - h * 0.3) * lift;
+      }
       const axis = f.n[0] ? 0 : f.n[1] ? 1 : 2;
       const ta = (axis + 1) % 3, tb = (axis + 2) % 3;
       const base = pos.length / 3;
@@ -387,17 +429,36 @@ export function buildTerrain(world) {
         return s1 && s2 ? 0 : 3 - (s1 + s2 + cr);
       });
       f.c.forEach((c, i) => {
-        pos.push(x + c[0], y + c[1], z + c[2]);
+        const vx = x + c[0], vy = y + c[1], vz = z + c[2];
+        pos.push(vx, vy, vz);
         nor.push(...f.n);
-        const shade = AO[aos[i]];
-        col.push(shade, shade, shade);
+        const shade = AO[aos[i]], k = (1 - shade) / (1 - AO[0]);
+        // Broad, soft patches of lighter and darker ground so the tiles don't read as a grid.
+        const p = 0.93 + fbm(patch, vx * 0.09, vz * 0.09) * 0.14;
+        col.push(shade * (1 - k * (1 - AO_TINT[0]) * 0.5) * p * hr, shade * (1 - k * (1 - AO_TINT[1]) * 0.5) * p * hg, Math.min(1, shade * (1 + k * 0.25)) * p * hb);
+        sway.push(leafy ? 1 : 0);
       });
       uv.push(u0, v0, u1, v0, u1, v1, u0, v1);
       if (aos[0] + aos[2] < aos[1] + aos[3]) index.push(base + 1, base + 2, base + 3, base + 1, base + 3, base);
       else index.push(base, base + 1, base + 2, base, base + 2, base + 3);
     }
   }
-  return geometry(pos, nor, uv, col, index);
+  const g = geometry(pos, nor, uv, col, index);
+  g.setAttribute('sway', new THREE.Float32BufferAttribute(sway, 1));   // leaves move in the wind
+  return g;
+}
+
+// Water is coloured in bands by distance to the shore: pale turquoise shallows, then deeper blues.
+const WATER_BANDS = ['#86d8d2', '#5cb4d8', '#4590d2', '#3874c2'].map((c) => new THREE.Color(c));
+function shoreDistance(get, x, wy, z) {
+  for (let d = 1; d <= 3; d++) {
+    for (let dz = -d; dz <= d; dz++) for (let dx = -d; dx <= d; dx++) {
+      if (Math.max(Math.abs(dx), Math.abs(dz)) !== d) continue;
+      const id = get(x + dx, wy, z + dz);
+      if (id !== B.WATER && id !== B.AIR) return d;
+    }
+  }
+  return 4;
 }
 
 export function buildWater(world) {
@@ -407,23 +468,57 @@ export function buildWater(world) {
     if (get(x, wy, z) !== B.WATER || get(x, wy + 1, z) !== B.AIR) continue;
     const y = wy + 1 - 0.14;
     const base = pos.length / 3;
+    const c = WATER_BANDS[shoreDistance(get, x, wy, z) - 1];
     pos.push(x, y, z + 1, x + 1, y, z + 1, x + 1, y, z, x, y, z);
     nor.push(0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0);
     uv.push(x, -z - 1, x + 1, -z - 1, x + 1, -z, x, -z);
-    col.push(1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1);
+    for (let i = 0; i < 4; i++) col.push(c.r, c.g, c.b);
     index.push(base, base + 1, base + 2, base, base + 2, base + 3);
   }
   return geometry(pos, nor, uv, col, index);
 }
 
+// A ragged strip of foam where the water meets the bank, plus spots for twinkling glints.
+export function buildFoam(world) {
+  const { W, D, H, get } = world;
+  const r = rng(91);
+  const pos = [], nor = [], uv = [], col = [], index = [], glints = [];
+  const quad = (x0, z0, x1, z1, y) => {
+    const base = pos.length / 3;
+    pos.push(x0, y, z1, x1, y, z1, x1, y, z0, x0, y, z0);
+    nor.push(0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0);
+    uv.push(0, 0, 1, 0, 1, 1, 0, 1);
+    const a = 0.85 + r() * 0.15;
+    for (let i = 0; i < 4; i++) col.push(a, a, a);
+    index.push(base, base + 1, base + 2, base, base + 2, base + 3);
+  };
+  for (let wy = 0; wy < H - 1; wy++) for (let z = 0; z < D; z++) for (let x = 0; x < W; x++) {
+    if (get(x, wy, z) !== B.WATER || get(x, wy + 1, z) !== B.AIR) continue;
+    const y = wy + 1 - 0.12;
+    const land = (dx, dz) => { const id = get(x + dx, wy, z + dz); return id !== B.WATER && id !== B.AIR; };
+    // Each edge gets foam in two or three uneven pieces, so it reads as lapping, not a line.
+    for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      if (!land(dx, dz)) continue;
+      for (let s = 0; s < 1; s += 0.25) {
+        if (r() < 0.2) continue;
+        const w = 0.12 + r() * 0.22, len = 0.25;
+        if (dx) { const ex = dx > 0 ? x + 1 - w : x; quad(ex, z + s, ex + w, z + s + len, y); }
+        else { const ez = dz > 0 ? z + 1 - w : z; quad(x + s, ez, x + s + len, ez + w, y); }
+      }
+    }
+    if (shoreDistance(get, x, wy, z) >= 2 && r() < 0.25) glints.push({ x: x + r(), y: y + 0.03, z: z + r(), ph: r() * 6.28, sp: 0.6 + r() });
+  }
+  return { geometry: geometry(pos, nor, uv, col, index), glints };
+}
+
 export function buildPlants(world, seasonName) {
   const season = SEASONS[seasonName];
-  const pos = [], nor = [], uv = [], col = [], index = [];
+  const pos = [], nor = [], uv = [], col = [], index = [], sway = [];
   for (const p of world.plants) {
     if (p.u > season.plantChance) continue;
     let tile;
     if (seasonName === 'winter') tile = T.bush;
-    else if (p.k < season.flowerChance) tile = [T.flower0, T.flower1, T.flower2][Math.floor((p.k / season.flowerChance) * 3)];
+    else if (p.k < season.flowerChance) tile = [T.flower0, T.flower1, T.flower2][Math.min(2, Math.floor(p.hue * 2.2 + (p.k / season.flowerChance) * 0.6))];
     else tile = T.tallGrass;
     const [u0, v0, u1, v1] = tileUV(tile);
     const cx = p.x + 0.5 + p.ox, cz = p.z + 0.5 + p.oz, h = p.s, w = 0.45 * p.s;
@@ -433,6 +528,7 @@ export function buildPlants(world, seasonName) {
       nor.push(0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0);
       uv.push(u0, v0, u1, v0, u1, v1, u0, v1);
       col.push(0.95, 0.95, 0.95, 0.95, 0.95, 0.95, 1, 1, 1, 1, 1, 1);
+      sway.push(0, 0, 1, 1);
       index.push(base, base + 1, base + 2, base, base + 2, base + 3);
     }
   }
@@ -449,6 +545,7 @@ export function buildPlants(world, seasonName) {
       nor.push(0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0);
       uv.push(u0, v0, u1, v0, u1, v1, u0, v1);
       col.push(0.95, 0.95, 0.95, 0.95, 0.95, 0.95, 1, 1, 1, 1, 1, 1);
+      sway.push(0, 0, 0.6, 0.6);
       index.push(base, base + 1, base + 2, base, base + 2, base + 3);
     }
   };
@@ -465,11 +562,14 @@ export function buildPlants(world, seasonName) {
     else if (seasonName === 'summer') crop(x, z, T.wheat2, 0.95 + v * 0.1);
     else crop(x, z, x <= farm.x0 + 4 ? T.stubble : T.wheat3, x <= farm.x0 + 4 ? 0.3 : 1.0);  // half harvested
   }
-  return geometry(pos, nor, uv, col, index);
+  const g = geometry(pos, nor, uv, col, index);
+  g.setAttribute('sway', new THREE.Float32BufferAttribute(sway, 1));
+  return g;
 }
 
-// The land beyond the map: the same hills and river carry on at half the voxel detail, then rise
-// into coarser mountains that the fog turns into haze. Forests are individual blocky canopies.
+// The land beyond the map: the same hills and river carry on, at full voxel detail right by the
+// edge and coarser further out, then rise into mountains that the fog turns into haze. Forests
+// are rounded crowns, so the distance reads as woodland rather than boxes.
 export function buildFar(world, seasonName) {
   const season = SEASONS[seasonName];
   const { W, D, WL, riverX } = world;
@@ -477,7 +577,7 @@ export function buildFar(world, seasonName) {
   const hash = (x, z) => { const s = Math.sin(x * 12.9898 + z * 78.233) * 43758.5453; return s - Math.floor(s); };
   const pos = [], nor = [], uv = [], col = [], index = [];
   const waterY = WL + 1 - 0.14;
-  const water = new THREE.Color(season.snow ? '#c4e0f2' : '#4a82cf');
+  const water = new THREE.Color(season.snow ? '#c4e0f2' : '#4a86cc');
   const sand = new THREE.Color('#e0cf98'), stone = new THREE.Color('#8d8f96'), snow = new THREE.Color('#f2f6fb');
 
   // Terrain only (no trees), so neighbouring cells agree on it.
@@ -490,23 +590,32 @@ export function buildFar(world, seasonName) {
     const valley = smooth(60, 6, d) * (1 - t * 0.5);
     return h + t * (6 + Math.pow(fbm(n, x * 0.012, z * 0.012), 1.3) * 90) * (1 - valley);
   };
+  const nCanopy = valueNoise(14);
+  const byLight = (pal) => [...pal].sort((a, b) => new THREE.Color(a).getHSL({}).l - new THREE.Color(b).getHSL({}).l);
+  const leafRamps = season.leaves.map(byLight);
   const cell = (x, z, S) => {
     const cx = x + S / 2, cz = z + S / 2;
     const d = Math.abs(cx - riverX(cz));
     const h = Math.round(ground(cx, cz));
-    if (d < 3.4) return { top: waterY, color: water };
+    if (d < 3.4) return { top: waterY, color: water, water: true };
     const c = new THREE.Color();
     let top = h;
-    const tint = 0.9 + fbm(nTint, cx * 0.08, cz * 0.08) * 0.2 + (hash(x, z) - 0.5) * 0.06;
-    const forest = fbm(nForest, cx * 0.035, cz * 0.035) > 0.47 - Math.min(0.12, h * 0.002);
+    const tint = 0.92 + fbm(nTint, cx * 0.08, cz * 0.08) * 0.14 + (hash(x, z) - 0.5) * 0.08;
+    const f = fbm(nForest, cx * 0.035, cz * 0.035) - (0.47 - Math.min(0.12, h * 0.002));
     if ((season.snow && h > 30) || h > 88) c.copy(snow);
     else if (h > 60) c.copy(stone).multiplyScalar(0.9 + hash(z, x) * 0.2);
     else if (d < 6.5 && h <= WL + 1) c.copy(sand);
-    else if (forest && d > 7 && hash(x, z) < 0.8) {
-      const leaves = season.leaves[Math.floor(hash(z + 3, x) * 3)];
-      c.set(leaves[Math.floor(hash(x + 7, z) * leaves.length)]);
-      top = h + (S > 2 ? 4 : 2) + Math.floor(hash(x - 5, z) * 2);       // a canopy above the ground
-    } else c.set(season.grass[0]);
+    else if (f > 0 && d > 7) {
+      // Forest: rounded crowns. A fine noise makes domes of trees, lit on their upper part.
+      const crown = fbm(nCanopy, cx * 0.32, cz * 0.32);
+      const dome = Math.min(1, f * 12) * (0.35 + crown * 0.9);
+      top = h + Math.round(1 + dome * 4.5);
+      const sorted = leafRamps[Math.floor(fbm(nTint, cx * 0.05 + 9, cz * 0.05) * 2.99)];
+      c.set(sorted[Math.max(0, Math.min(3, Math.floor(crown * 4.2 + (hash(x + 7, z) - 0.5) * 1.2)))]);
+    } else {
+      const g = [...season.grass];
+      c.set(g[Math.floor(hash(x + 3, z - 1) * 2) + (fbm(nTint, cx * 0.1, cz * 0.1) > 0.5 ? 1 : 0)]);
+    }
     c.multiplyScalar(tint);
     return { top, color: c };
   };
@@ -516,23 +625,26 @@ export function buildFar(world, seasonName) {
     for (let i = 0; i < 4; i++) { nor.push(...normal); uv.push(0, 0); col.push(color.r, color.g, color.b); }
     index.push(base, base + 1, base + 2, base, base + 2, base + 3);
   };
-  const side = new THREE.Color();
+  // Sides in shade lean violet, like the near terrain's ambient occlusion.
+  const side = new THREE.Color(), shadeFront = new THREE.Color(0.7, 0.68, 0.84), shadeSide = new THREE.Color(0.8, 0.78, 0.9);
   const inMap = (x, z) => x >= 0 && x < W && z >= 0 && z < D;
-  // Near band at 2 blocks per cell (around the map too), far band at 4.
-  for (const [S, z0, z1, x0, x1] of [[2, -72, D, -100, W + 100], [4, -240, -72, -160, W + 160]]) {
+  // Bands: 1 block per cell right around the map, 2 further out, 4 only deep in the haze.
+  const bands = [[1, -36, D, -36, W + 36], [2, -120, D, -110, W + 110], [4, -260, -120, -170, W + 170]];
+  const inner = (b, x, z) => b > 0 && (() => { const [, z0, z1, x0, x1] = bands[b - 1]; return x >= x0 && x < x1 && z >= z0 && z < z1; })();
+  bands.forEach(([S, z0, z1, x0, x1], b) => {
     for (let z = z0; z < z1; z += S) for (let x = x0; x < x1; x += S) {
-      if (inMap(x, z)) continue;
+      if (inMap(x, z) || inner(b, x, z)) continue;               // drawn by the map or a finer band
       const { top, color } = cell(x, z, S);
       quad([x, top, z + S], [x + S, top, z + S], [x + S, top, z], [x, top, z], [0, 1, 0], color);
-      side.copy(color).multiplyScalar(0.72);
       const front = cell(x, z + S, S).top;
+      side.copy(color).multiply(shadeFront);
       if (front < top && !inMap(x, z + S)) quad([x, front, z + S], [x + S, front, z + S], [x + S, top, z + S], [x, top, z + S], [0, 0, 1], side);
-      side.copy(color).multiplyScalar(0.82);
+      side.copy(color).multiply(shadeSide);
       const left = cell(x - S, z, S).top, right = cell(x + S, z, S).top;
       if (left < top && !inMap(x - S, z)) quad([x, left, z], [x, left, z + S], [x, top, z + S], [x, top, z], [-1, 0, 0], side);
       if (right < top && !inMap(x + S, z)) quad([x + S, right, z + S], [x + S, right, z], [x + S, top, z], [x + S, top, z + S], [1, 0, 0], side);
     }
-  }
+  });
   return geometry(pos, nor, uv, col, index);
 }
 

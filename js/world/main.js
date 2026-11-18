@@ -1,7 +1,7 @@
 // Cubezen's 3D voxel background: day/night cycle, seasons, weather and cosy lights.
 import * as THREE from 'three';
 import { createAtlas, SEASONS, rng } from './textures.js';
-import { generateWorld, buildTerrain, buildWater, buildPlants, buildFar } from './build.js';
+import { generateWorld, buildTerrain, buildWater, buildFoam, buildPlants, buildFar } from './build.js';
 import { createCritters } from './critters.js';
 import { createProps } from './props.js';
 
@@ -15,11 +15,11 @@ renderer.setPixelRatio(PIXEL);
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.shadowMap.autoUpdate = false;
-renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.05;
+// The scene renders into a linear HDR target; a final pass does the tone mapping and grading.
+renderer.toneMapping = THREE.NoToneMapping;
 
 const scene = new THREE.Scene();
-scene.fog = new THREE.Fog(0xffffff, 40, 230);
+scene.fog = new THREE.Fog(0xffffff, 45, 260);
 const camera = new THREE.PerspectiveCamera(48, 1, 0.5, 900);
 const CAM_POS = new THREE.Vector3(52, 25, 101), CAM_TARGET = new THREE.Vector3(63, 10, 46);
 
@@ -38,10 +38,89 @@ const waterMat = new THREE.MeshLambertMaterial({ map: atlas.waterMap, transparen
 const water = new THREE.Mesh(buildWater(world), waterMat);
 water.receiveShadow = true;
 scene.add(water);
+const foamData = buildFoam(world);
+const foamMat = new THREE.MeshBasicMaterial({ color: 0xffffff, vertexColors: true, transparent: true, opacity: 0.8, depthWrite: false });
+const foam = new THREE.Mesh(foamData.geometry, foamMat);
+scene.add(foam);
+// Glints: little sparkles that wink on the open water in daylight.
+const glintGeo = new THREE.BufferGeometry();
+const glintPos = new Float32Array(foamData.glints.length * 3), glintCol = new Float32Array(foamData.glints.length * 3);
+foamData.glints.forEach((g, i) => glintPos.set([g.x, g.y, g.z], i * 3));
+glintGeo.setAttribute('position', new THREE.BufferAttribute(glintPos, 3));
+glintGeo.setAttribute('color', new THREE.BufferAttribute(glintCol, 3));
+const glints = new THREE.Points(glintGeo, new THREE.PointsMaterial({ size: 0.22, vertexColors: true, blending: THREE.AdditiveBlending, transparent: true, depthWrite: false }));
+scene.add(glints);
+function updateWater(time, day) {
+  foamMat.opacity = 0.55 + Math.sin(time * 1.3) * 0.15;
+  foamData.glints.forEach((g, i) => {
+    const b = Math.pow(Math.max(0, Math.sin(time * 1.7 * g.sp + g.ph)), 12) * day;
+    glintCol[i * 3] = glintCol[i * 3 + 1] = glintCol[i * 3 + 2] = b;
+  });
+  glintGeo.attributes.color.needsUpdate = true;
+}
 
 const plantMat = new THREE.MeshLambertMaterial({ map: atlas.map, vertexColors: true, alphaTest: 0.5, side: THREE.DoubleSide });
 let plants = null, far = null;
 const farMat = new THREE.MeshLambertMaterial({ vertexColors: true });
+
+// ---------- cloud shadows ----------
+// Instead of the shadow map (refreshed only twice a second, so it would stutter), a tiling mask of
+// blobby pixel clouds is projected straight down and slid every frame. 1 texel = 2 blocks.
+const cloudShadowTex = (() => {
+  const N = 64, c = document.createElement('canvas');
+  c.width = c.height = N;
+  const g = c.getContext('2d'), r = rng(78);
+  g.fillStyle = '#000';
+  g.fillRect(0, 0, N, N);
+  g.fillStyle = '#fff';
+  for (let i = 0; i < 11; i++) {
+    const cx = r() * N, cy = r() * N, n = 3 + Math.floor(r() * 3), big = 0.8 + r() * 0.6;
+    for (let j = 0; j < n; j++) {
+      const t = j / (n - 1) - 0.5, rad = (2.5 + r() * 2) * big * (1 - Math.abs(t) * 0.5);
+      const x = cx + t * 11 * big, y = cy + (r() - 0.5) * 3;
+      for (const ox of [-N, 0, N]) for (const oy of [-N, 0, N]) { g.beginPath(); g.arc(x + ox, y + oy, rad, 0, Math.PI * 2); g.fill(); }
+    }
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.magFilter = t.minFilter = THREE.NearestFilter;
+  t.generateMipmaps = false;
+  return t;
+})();
+const cloudShadow = { map: { value: cloudShadowTex }, offset: { value: new THREE.Vector2() }, strength: { value: 0 } };
+const wind = { time: { value: 0 }, amount: { value: 1 } };
+// Shared shader tweaks: projected cloud shadows, and (for meshes with a 'sway' attribute) a soft
+// wind that rocks leaves and grass. The offset is a smooth function of world position, so
+// neighbouring leaf faces move together and never open gaps.
+function withCloudShadows(mat, sways = false) {
+  mat.onBeforeCompile = (shader) => {
+    shader.uniforms.cloudShadowMap = cloudShadow.map;
+    shader.uniforms.cloudShadowOffset = cloudShadow.offset;
+    shader.uniforms.cloudShadowStrength = cloudShadow.strength;
+    shader.uniforms.windTime = wind.time;
+    shader.uniforms.windAmount = wind.amount;
+    const swayCode = sways ? `
+  {
+    vec3 wp = (modelMatrix * vec4(transformed, 1.0)).xyz;
+    float gust = 0.6 + 0.4 * sin(windTime * 0.23 + wp.x * 0.02);
+    float s = sway * windAmount * gust;
+    transformed.x += (sin(windTime * 1.4 + wp.x * 0.35 + wp.z * 0.21) * 0.07 + sin(windTime * 2.9 + wp.y * 0.6 + wp.z * 0.5) * 0.025) * s;
+    transformed.z += cos(windTime * 1.1 + wp.z * 0.3 + wp.x * 0.17) * 0.05 * s;
+    transformed.y += sin(windTime * 1.7 + wp.x * 0.4) * 0.015 * s;
+  }` : '';
+    shader.vertexShader = (sways ? 'attribute float sway;\n' : '') + 'uniform float windTime; uniform float windAmount; varying vec2 vCloudXZ;\n' +
+      shader.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>' + swayCode)
+        .replace('#include <project_vertex>', '#include <project_vertex>\n  vCloudXZ = (modelMatrix * vec4(transformed, 1.0)).xz;');
+    shader.fragmentShader = 'uniform sampler2D cloudShadowMap; uniform vec2 cloudShadowOffset; uniform float cloudShadowStrength; varying vec2 vCloudXZ;\n' +
+      shader.fragmentShader.replace('#include <opaque_fragment>',
+        'outgoingLight *= 1.0 - cloudShadowStrength * texture2D(cloudShadowMap, (vCloudXZ + cloudShadowOffset) / 128.0).r;\n  #include <opaque_fragment>');
+  };
+  mat.customProgramCacheKey = () => (sways ? 'sway' : 'still');
+  return mat;
+}
+withCloudShadows(blockMat, true);
+withCloudShadows(plantMat, true);
+withCloudShadows(waterMat);
 
 const critters = createCritters(scene, world);
 const props = createProps(scene, world);
@@ -201,38 +280,65 @@ const stars = (() => {
 })();
 scene.add(stars);
 
-const cloudMat = new THREE.MeshLambertMaterial({ color: 0xffffff, transparent: true, opacity: 0.9, emissive: 0xffffff, emissiveIntensity: 0.25 });
+// Puffy clouds: clusters of spheres voxelised at 2 units, white on top and lilac-blue underneath.
+const cloudMat = new THREE.MeshLambertMaterial({ color: 0xffffff, vertexColors: true, emissive: 0xffffff, emissiveIntensity: 0.25, fog: false });
 const clouds = new THREE.Group();
 const CLOUD_SPAN = 320;
-(() => {
-  const r = rng(77), geos = [];
-  const cell = 8;
-  for (let copy = 0; copy < 2; copy++) for (let i = 0; i < 36; i++) {
-    const cx = r() * CLOUD_SPAN, cz = -90 + r() * 170;
-    const n = 2 + Math.floor(r() * 5);
+function makeClouds(seed, count, z0, z1, y, scale) {
+  const r = rng(seed), V = 2;
+  const pos = [], nor = [], col = [], index = [];
+  const shadeTop = [1, 1, 1], shadeSide = [0.93, 0.94, 1], shadeBottom = [0.8, 0.82, 0.96];
+  const DIRS = [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]];
+  for (let copy = 0; copy < 2; copy++) for (let i = 0; i < count; i++) {
+    const cx = (i + r() * 0.8) / count * CLOUD_SPAN + copy * CLOUD_SPAN, cz = z0 + r() * (z1 - z0), cy = r() * 8;
+    const big = (0.7 + r() * 0.8) * scale;
+    const blobs = [];
+    const n = 3 + Math.floor(r() * 4);
     for (let j = 0; j < n; j++) {
-      const g = new THREE.BoxGeometry(cell * (1 + Math.floor(r() * 2)), 2.5, cell * (1 + Math.floor(r() * 2)));
-      g.translate(cx + (j % 3) * cell + copy * CLOUD_SPAN, 0, cz + Math.floor(j / 3) * cell);
-      geos.push(g);
+      const t = n === 1 ? 0 : j / (n - 1) - 0.5;
+      blobs.push([t * 22 * big + (r() - 0.5) * 4, (1 - Math.abs(t) * 1.6) * 3 * big, (r() - 0.5) * 8 * big, (4 + r() * 3.5) * big * (1 - Math.abs(t) * 0.6)]);
+    }
+    const cells = new Set(), key = (a, b, c) => a + ',' + b + ',' + c;
+    for (const [bx, by, bz, br] of blobs) {
+      const R = Math.ceil(br / V);
+      for (let a = -R; a <= R; a++) for (let b = 0; b <= R; b++) for (let c = -R; c <= R; c++) {
+        const x = Math.round(bx / V) + a, y = Math.round(by / V) + b, z = Math.round(bz / V) + c;
+        const dx = x * V - bx, dy = (y * V - by) * 1.25, dz = z * V - bz;
+        if (dx * dx + dy * dy + dz * dz <= br * br && y >= 0) cells.add(key(x, y, z));
+      }
+    }
+    for (const k of cells) {
+      const [x, y, z] = k.split(',').map(Number);
+      for (const d of DIRS) {
+        if (cells.has(key(x + d[0], y + d[1], z + d[2]))) continue;
+        const base = pos.length / 3;
+        const ax = d[0] ? 0 : d[1] ? 1 : 2, u = (ax + 1) % 3, w = (ax + 2) % 3;
+        const corner = (su, sw) => {
+          const p = [x, y, z].map((v, q) => v * V + (q === ax ? (d[q] > 0 ? V : 0) : 0));
+          p[u] += su * V; p[w] += sw * V;
+          pos.push(cx + p[0], cy + p[1], cz + p[2]);
+          nor.push(...d);
+          col.push(...(d[1] > 0 ? shadeTop : d[1] < 0 ? shadeBottom : shadeSide));
+        };
+        corner(0, 0); corner(1, 0); corner(1, 1); corner(0, 1);
+        const flip = d[0] + d[1] + d[2] < 0;
+        if (flip) index.push(base, base + 2, base + 1, base, base + 3, base + 2);
+        else index.push(base, base + 1, base + 2, base, base + 2, base + 3);
+      }
     }
   }
-  // Merge all boxes into one mesh.
-  const merged = new THREE.BufferGeometry();
-  const attrs = { position: [], normal: [] }, index = [];
-  let offset = 0;
-  for (const g of geos) {
-    attrs.position.push(...g.attributes.position.array);
-    attrs.normal.push(...g.attributes.normal.array);
-    index.push(...Array.from(g.index.array, (i) => i + offset));
-    offset += g.attributes.position.count;
-  }
-  merged.setAttribute('position', new THREE.Float32BufferAttribute(attrs.position, 3));
-  merged.setAttribute('normal', new THREE.Float32BufferAttribute(attrs.normal, 3));
-  merged.setIndex(index);
-  const m = new THREE.Mesh(merged, cloudMat);
-  m.position.set(-CLOUD_SPAN, 62, 0);
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
+  g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+  g.setIndex(index);
+  const m = new THREE.Mesh(g, cloudMat);
+  m.position.set(-CLOUD_SPAN, y, 0);
+  m.frustumCulled = false;
   clouds.add(m);
-})();
+  return m;
+}
+makeClouds(77, 12, -210, -90, 34, 1.8);                    // on the horizon, among the far hills
 scene.add(clouds);
 
 // ---------- lights ----------
@@ -249,18 +355,20 @@ scene.add(sunLight, sunLight.target);
 
 // ---------- time of day ----------
 // t: 0 = midnight, 0.25 = sunrise, 0.5 = noon, 0.75 = sunset.
+// hs/hg: sky and ground colours of the fill light (ground is lilac, so shade reads violet, not grey).
+// st/lt: the grade's shadow and highlight tints.
 const KEYS = [
-  { t: 0.00, top: '#060a1e', hor: '#1a2150', light: '#9fb4ff', li: 0.75, hs: '#5566aa', hg: '#20203a', hi: 1.0, night: 1 },
-  { t: 0.21, top: '#141a48', hor: '#4b4580', light: '#9fb4ff', li: 0.65, hs: '#5a68b0', hg: '#26223a', hi: 0.95, night: 0.95 },
-  { t: 0.25, top: '#3a4590', hor: '#e58a7a', light: '#ff9a7a', li: 0.35, hs: '#a08ac0', hg: '#3a2c30', hi: 0.85, night: 0.6 },
-  { t: 0.29, top: '#5a78c8', hor: '#ffbf90', light: '#ffc08a', li: 1.7, hs: '#f0c0cc', hg: '#6a4a3a', hi: 1.0, night: 0.1 },
-  { t: 0.36, top: '#4a8de6', hor: '#bfe0ff', light: '#fff1d8', li: 2.4, hs: '#bcd8ff', hg: '#6a5a40', hi: 1.0, night: 0 },
-  { t: 0.50, top: '#3f86e8', hor: '#cbe6ff', light: '#ffffff', li: 2.7, hs: '#c4ddff', hg: '#6a5a40', hi: 1.05, night: 0 },
-  { t: 0.63, top: '#4a88e0', hor: '#ffe2bc', light: '#fff0d0', li: 2.4, hs: '#c8d8f0', hg: '#6a5a40', hi: 1.0, night: 0 },
-  { t: 0.70, top: '#7a64c0', hor: '#ffa07a', light: '#ffa868', li: 2.0, hs: '#e8b4d4', hg: '#6a4040', hi: 1.05, night: 0.05 },
-  { t: 0.75, top: '#3c3480', hor: '#d0708a', light: '#ff8a70', li: 0.4, hs: '#a07ab8', hg: '#3a2a30', hi: 0.85, night: 0.55 },
-  { t: 0.79, top: '#141a48', hor: '#4b3f78', light: '#9fb4ff', li: 0.65, hs: '#5a68b0', hg: '#26223a', hi: 0.95, night: 0.95 },
-  { t: 1.00, top: '#060a1e', hor: '#1a2150', light: '#9fb4ff', li: 0.75, hs: '#5566aa', hg: '#20203a', hi: 1.0, night: 1 },
+  { t: 0.00, top: '#0a0f2a', hor: '#232a5e', light: '#a8bcff', li: 0.75, hs: '#5f70b8', hg: '#2c2850', hi: 1.1, night: 1, st: '#1c2a6a', lt: '#c8d8ff' },
+  { t: 0.21, top: '#171c4e', hor: '#4b4580', light: '#a8bcff', li: 0.65, hs: '#6470b8', hg: '#30284e', hi: 1.05, night: 0.95, st: '#22286a', lt: '#d0d8ff' },
+  { t: 0.25, top: '#3e4794', hor: '#ec907e', light: '#ff9a7a', li: 0.4, hs: '#a890c8', hg: '#4a3456', hi: 0.95, night: 0.6, st: '#4a2a72', lt: '#ffd0b0' },
+  { t: 0.29, top: '#5a78c8', hor: '#ffc29a', light: '#ffc490', li: 1.7, hs: '#f0c4d4', hg: '#6c5070', hi: 1.1, night: 0.1, st: '#4a3080', lt: '#ffe0b0' },
+  { t: 0.36, top: '#4a8de6', hor: '#c2e2ff', light: '#fff1d8', li: 2.2, hs: '#c0daff', hg: '#6c6488', hi: 1.15, night: 0, st: '#30387a', lt: '#fff0c8' },
+  { t: 0.50, top: '#4288e6', hor: '#cde8ff', light: '#fffaf0', li: 2.4, hs: '#c8e0ff', hg: '#6c6890', hi: 1.2, night: 0, st: '#2c3a7c', lt: '#fff4d0' },
+  { t: 0.63, top: '#4a88e0', hor: '#ffe2bc', light: '#fff0d0', li: 2.2, hs: '#ccdaf4', hg: '#706090', hi: 1.15, night: 0, st: '#36367a', lt: '#ffe8c0' },
+  { t: 0.70, top: '#7464c0', hor: '#ffa688', light: '#ffaa70', li: 1.9, hs: '#eab8da', hg: '#704a7a', hi: 1.15, night: 0.05, st: '#5a2a7a', lt: '#ffd8a8' },
+  { t: 0.75, top: '#3c3480', hor: '#d4748e', light: '#ff8a70', li: 0.45, hs: '#a880c0', hg: '#4a3058', hi: 0.95, night: 0.55, st: '#4a2470', lt: '#ffc0b0' },
+  { t: 0.79, top: '#171c4e', hor: '#4b3f78', light: '#a8bcff', li: 0.65, hs: '#6470b8', hg: '#30284e', hi: 1.05, night: 0.95, st: '#22286a', lt: '#d0d8ff' },
+  { t: 1.00, top: '#0a0f2a', hor: '#232a5e', light: '#a8bcff', li: 0.75, hs: '#5f70b8', hg: '#2c2850', hi: 1.1, night: 1, st: '#1c2a6a', lt: '#c8d8ff' },
 ];
 const tmpA = new THREE.Color(), tmpB = new THREE.Color();
 function sample(t) {
@@ -270,7 +378,7 @@ function sample(t) {
   const f = (t - a.t) / (b.t - a.t);
   const c = (k) => tmpA.set(a[k]).lerp(tmpB.set(b[k]), f).clone();
   const n = (k) => a[k] + (b[k] - a[k]) * f;
-  return { top: c('top'), hor: c('hor'), light: c('light'), li: n('li'), hs: c('hs'), hg: c('hg'), hi: n('hi'), night: n('night') };
+  return { top: c('top'), hor: c('hor'), light: c('light'), li: n('li'), hs: c('hs'), hg: c('hg'), hi: n('hi'), night: n('night'), st: c('st'), lt: c('lt') };
 }
 
 const state = {
@@ -329,15 +437,15 @@ function updateParticles(dt, time) {
 }
 
 // Fireflies (spring/summer nights).
-const FLIES = 70;
+const FLIES = 130;
 const fGeo = new THREE.BufferGeometry();
 const fPos = new Float32Array(FLIES * 3), fCol = new Float32Array(FLIES * 3), fBase = [];
 for (let i = 0; i < FLIES; i++) {
-  fBase.push({ x: 35 + Math.random() * 55, z: 55 + Math.random() * 35, y: world.G + 1 + Math.random() * 3, ph: Math.random() * 6.28, sp: 0.5 + Math.random() });
+  fBase.push({ x: 30 + Math.random() * 65, z: 48 + Math.random() * 42, y: world.G + 1 + Math.random() * 3, ph: Math.random() * 6.28, sp: 0.5 + Math.random() });
 }
 fGeo.setAttribute('position', new THREE.BufferAttribute(fPos, 3));
 fGeo.setAttribute('color', new THREE.BufferAttribute(fCol, 3));
-const fireflies = new THREE.Points(fGeo, new THREE.PointsMaterial({ size: 0.14, vertexColors: true, blending: THREE.AdditiveBlending, transparent: true, depthWrite: false, toneMapped: false, fog: false }));
+const fireflies = new THREE.Points(fGeo, new THREE.PointsMaterial({ size: 0.18, vertexColors: true, blending: THREE.AdditiveBlending, transparent: true, depthWrite: false, toneMapped: false, fog: false }));
 fireflies.frustumCulled = false;
 scene.add(fireflies);
 function updateFireflies(time, strength) {
@@ -449,7 +557,10 @@ function applySeason(name) {
   far = new THREE.Mesh(buildFar(world, name), farMat);
   scene.add(far);
   const winter = name === 'winter';
-  waterMat.opacity = winter ? 0.96 : 0.82;
+  waterMat.opacity = winter ? 0.96 : 0.88;
+  waterMat.vertexColors = !winter;                         // ice ignores the depth bands
+  waterMat.needsUpdate = true;
+  foam.visible = glints.visible = !winter;
   setupParticles(name);
   props.setSeason(name);
   renderer.shadowMap.needsUpdate = true;
@@ -466,8 +577,12 @@ function applyTime(t) {
   skyUniforms.top.value.copy(top);
   skyUniforms.horizon.value.copy(hor);
   scene.fog.color.copy(hor);
-  scene.fog.near = 40 - wet * 22;
-  scene.fog.far = 230 - wet * 120;
+  // Aerial perspective: the far hills melt into the horizon colour in layers.
+  scene.fog.near = 45 - wet * 25;
+  scene.fog.far = 260 - wet * 140;
+  gradeUniforms.shadowTint.value.copy(k.st);
+  gradeUniforms.lightTint.value.copy(k.lt);
+  cloudShadow.strength.value = 0.34 * (1 - k.night) * (1 - wet);
 
   const a = (t - 0.25) * Math.PI * 2;
   sunDir.set(Math.cos(a) * 0.95, Math.sin(a), -0.3).normalize();
@@ -496,7 +611,7 @@ function applyTime(t) {
   hemi.intensity = k.hi * (1 - wet * 0.3);
   cloudMat.color.copy(k.hor).lerp(new THREE.Color(0xffffff), 0.6 * (1 - k.night)).lerp(grey, wet * 0.6);
   cloudMat.emissive.copy(k.hor);
-  cloudMat.emissiveIntensity = 0.35;
+  cloudMat.emissiveIntensity = 0.55;
 
   blockMat.emissiveIntensity = 0.05 + k.night * 1.1;
   lanternMat.color.setScalar(0.55 + k.night * 0.45).multiply(new THREE.Color(0xffc66e));
@@ -505,9 +620,56 @@ function applyTime(t) {
   return k;
 }
 
+
+// ---------- painterly grade: soft tone curve, tinted shadows, ordered dither ----------
+// Like pixel-art paintings: shadows go violet/blue instead of grey, highlights warm up, the
+// palette is gently quantised with a 4x4 Bayer dither so gradients read as hand-placed pixels.
+const rt = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter });
+const gradeUniforms = {
+  tScene: { value: rt.texture }, exposure: { value: 1.0 },
+  shadowTint: { value: new THREE.Color() }, lightTint: { value: new THREE.Color() },
+  sat: { value: 1.2 }, levels: { value: 36 },
+};
+const postScene = new THREE.Scene(), postCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+postScene.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMaterial({
+  uniforms: gradeUniforms, depthTest: false, depthWrite: false,
+  vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }',
+  fragmentShader: `
+    uniform sampler2D tScene; uniform float exposure; uniform vec3 shadowTint; uniform vec3 lightTint;
+    uniform float sat; uniform float levels; varying vec2 vUv;
+    float bayer(vec2 p){
+      vec2 q = mod(floor(p), 4.0);
+      int i = int(q.x) + int(q.y) * 4;
+      int m[16]; m[0]=0;m[1]=8;m[2]=2;m[3]=10;m[4]=12;m[5]=4;m[6]=14;m[7]=6;m[8]=3;m[9]=11;m[10]=1;m[11]=9;m[12]=15;m[13]=7;m[14]=13;m[15]=5;
+      for (int k = 0; k < 16; k++) if (k == i) return (float(m[k]) + 0.5) / 16.0;
+      return 0.5;
+    }
+    vec3 toSRGB(vec3 c){ return mix(c * 12.92, 1.055 * pow(c, vec3(1.0/2.4)) - 0.055, step(0.0031308, c)); }
+    void main(){
+      vec3 c = texture2D(tScene, vUv).rgb * exposure;
+      // Soft shoulder that keeps hue: compress luminance, not channels.
+      float l = dot(c, vec3(0.2126, 0.7152, 0.0722));
+      float lt = l * (1.0 + l / 2.6) / (1.0 + l);
+      c *= lt / max(l, 1e-4);
+      c = clamp(c, 0.0, 1.0);
+      c = toSRGB(c);
+      float y = dot(c, vec3(0.299, 0.587, 0.114));
+      // Lift and tint the darks, warm the lights, a touch more saturation.
+      c += shadowTint * pow(1.0 - y, 2.2) * 0.22;
+      c *= mix(vec3(1.0), lightTint, smoothstep(0.45, 1.0, y) * 0.12);
+      c = mix(vec3(dot(c, vec3(0.299, 0.587, 0.114))), c, sat);
+      c = clamp(c, 0.0, 1.0);
+      // Ordered dither, then quantise.
+      c = floor(c * levels + bayer(gl_FragCoord.xy)) / levels;
+      gl_FragColor = vec4(c, 1.0);
+    }`,
+})));
+
 // ---------- loop ----------
 function resize() {
   renderer.setSize(innerWidth, innerHeight, false);
+  const size = renderer.getDrawingBufferSize(new THREE.Vector2());
+  rt.setSize(size.x, size.y);
   camera.aspect = innerWidth / innerHeight;
   // Keep the scene framed on narrow (portrait) screens.
   camera.fov = camera.aspect < 1 ? 62 : 48;
@@ -559,10 +721,14 @@ function update(step) {
   atlas.waterMap.offset.x = state.resolvedSeason === 'winter' ? 0 : time * 0.02;
   atlas.waterMap.offset.y = state.resolvedSeason === 'winter' ? 0 : Math.sin(time * 0.3) * 0.05;
   clouds.position.x = (time * 0.6) % CLOUD_SPAN;
+  cloudShadow.offset.value.set(-time * 0.9, time * 0.15);
+  wind.time.value = time;
+  wind.amount.value = 1 + state.rain * 1.2;                // a stormier sway in the rain
 
+  updateWater(time, (1 - k.night) * (1 - state.rain));
   updateParticles(step, time);
   const s = state.resolvedSeason;
-  updateFireflies(time, (s === 'summer' || s === 'spring' ? 1 : 0) * Math.max(0, k.night - 0.3) * (1 - state.rain));
+  updateFireflies(time, (s === 'summer' || s === 'spring' ? 1 : s === 'autumn' ? 0.4 : 0) * Math.max(0, k.night - 0.3) * (1 - state.rain));
   updateRain(step);
   fireLevel += (state.fire - fireLevel) * Math.min(1, step * 2);   // ease towards the slider
   updateSmokeAndEmbers(step, time, fireLevel);
@@ -571,7 +737,10 @@ function update(step) {
 
   shadowTimer += step;
   if (shadowTimer > 0.5) { shadowTimer = 0; renderer.shadowMap.needsUpdate = true; }
+  renderer.setRenderTarget(rt);
   renderer.render(scene, camera);
+  renderer.setRenderTarget(null);
+  renderer.render(postScene, postCam);
 }
 
 // URL overrides, e.g. ?time=sunset&season=spring (handy for screenshots).

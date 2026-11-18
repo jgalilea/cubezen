@@ -25,49 +25,51 @@ export function tileUV(tile) {
   return [c / COLS + e, 1 - (r + 1) / ROWS + e, (c + 1) / COLS - e, 1 - r / ROWS - e];
 }
 
+// Palettes are hue-shifted ramps (dark tones lean teal/violet, light tones lean warm), and get
+// sorted dark to light when painted, so their order here doesn't matter.
 export const SEASONS = {
   spring: {
-    grass: ['#74c95c', '#62b84d', '#88d86c', '#57a846'],
+    grass: ['#4c9a5a', '#62b45a', '#7cc864', '#a2da76'],
     leaves: [
-      ['#f4a9cb', '#ea92ba', '#fbc7de', '#d97aa6'],   // blossom
-      ['#7ccc5c', '#68b84c', '#94dc72', '#57a443'],
-      ['#f7bfd8', '#eea3c6', '#fde0ec', '#e08ab2'],
+      ['#d8687e', '#ee8ca0', '#ffadbe', '#ffd4dc'],   // blossom
+      ['#3c8a56', '#5aaa52', '#80c662', '#b0de78'],
+      ['#e07a8c', '#f49cac', '#ffbcc8', '#ffe0e6'],
     ],
-    tallGrass: ['#6cc457', '#5ab148', '#86d86a'],
+    tallGrass: ['#5aaa5a', '#72c060', '#94d474'],
     flowers: ['#ff9ec7', '#ffffff', '#ffe066'],
     flowerChance: 0.45, plantChance: 0.9, snow: false,
     particles: { kind: 'petal', colors: ['#ffc0dc', '#f7a1c8', '#ffe3ef'], count: 260 },
   },
   summer: {
-    grass: ['#5fb043', '#4f9c39', '#73c454', '#47902f'],
+    grass: ['#3f8a54', '#509e4a', '#68b450', '#8eca5e'],
     leaves: [
-      ['#3f9a3a', '#348533', '#55b04a', '#2c7a2c'],
-      ['#4ea640', '#3f9136', '#64bc52', '#37802f'],
-      ['#2f8a48', '#27783e', '#3f9e58', '#226a36'],
+      ['#2e6a4a', '#408a48', '#62ac4e', '#92cc5c'],
+      ['#336e46', '#4a9446', '#70b450', '#a2d062'],
+      ['#28604e', '#367e52', '#52a058', '#7cbc66'],
     ],
-    tallGrass: ['#5aaa42', '#4a9636', '#70c052'],
+    tallGrass: ['#4a9a4a', '#62b052', '#84c862'],
     flowers: ['#ffd23f', '#ff6b6b', '#9ec9ff'],
     flowerChance: 0.25, plantChance: 1, snow: false,
     particles: { kind: 'pollen', colors: ['#fff3b0', '#ffffff'], count: 110 },
   },
   autumn: {
-    grass: ['#9fae4c', '#8b9a40', '#b3bd5c', '#7a8a38'],
+    grass: ['#76844a', '#92a04e', '#adb25c', '#cabe6e'],
     leaves: [
-      ['#ec8a2c', '#d7721f', '#f6a744', '#c45f1a'],
-      ['#cf4a2c', '#b53b22', '#e2653e', '#9e3020'],
-      ['#e9c443', '#d4ab2e', '#f5d965', '#bf9524'],
+      ['#a4401e', '#d0622a', '#ea8a36', '#f6b252'],
+      ['#7a2a30', '#a43a2e', '#c85236', '#e0743e'],
+      ['#a47824', '#cca032', '#e6c446', '#f6dc72'],
     ],
-    tallGrass: ['#b4a04a', '#9c8a3c', '#c8b25a'],
+    tallGrass: ['#a8964a', '#c0aa58', '#d6c06c'],
     flowers: ['#ec8a2c', '#cf4a2c', '#f0d060'],
     flowerChance: 0.15, plantChance: 0.6, snow: false,
     particles: { kind: 'leaf', colors: ['#ec8a2c', '#cf4a2c', '#e9c443', '#d7721f'], count: 200 },
   },
   winter: {
-    grass: ['#f2f6fb', '#e3ebf5', '#ffffff', '#d6e1ee'],
+    grass: ['#c4d2ea', '#dbe5f4', '#ecf2fa', '#ffffff'],
     leaves: [
-      ['#2f5f48', '#28533f', '#3a6e55', '#21473a'],
-      ['#3a6a4a', '#30593f', '#467a57', '#284d36'],
-      ['#2a5546', '#234a3d', '#356452', '#1d4034'],
+      ['#1e3e3c', '#284e42', '#33604c', '#46745a'],
+      ['#22443c', '#2e5644', '#3a684e', '#4e7e5e'],
+      ['#1a3a3c', '#244a42', '#2f5a4c', '#426e58'],
     ],
     tallGrass: ['#8a7a5a', '#7a6a4a', '#9a8a6a'],
     flowers: ['#ffffff', '#ffffff', '#ffffff'],
@@ -75,6 +77,7 @@ export const SEASONS = {
     particles: { kind: 'snow', colors: ['#ffffff', '#eef4ff'], count: 700 },
   },
 };
+
 
 export function createAtlas() {
   const canvas = document.createElement('canvas');
@@ -121,35 +124,57 @@ export function createAtlas() {
       }
     };
 
-    const DIRT = ['#8a5a3a', '#7a4e32', '#966644', '#6b432b'];
-    const grassW = [0.58, 0.22, 0.12, 0.08];
+    // Soft clusters instead of per-pixel noise: a tileable blend of a coarse and a finer random
+    // grid picks the palette index, plus optional top-down / diagonal light and a little grain.
+    const lum = (hex) => { const v = parseInt(hex.slice(1), 16); return (v >> 16) * 0.3 + ((v >> 8) & 255) * 0.59 + (v & 255) * 0.11; };
+    const gridNoise = (cell) => {
+      const n = S / cell, g = Array.from({ length: n * n }, r);
+      const at = (a, b) => g[(b % n) * n + (a % n)];
+      return (x, y) => {
+        const fx = x / cell, fy = y / cell, ix = Math.floor(fx), iy = Math.floor(fy);
+        let tx = fx - ix, ty = fy - iy;
+        tx = tx * tx * (3 - 2 * tx); ty = ty * ty * (3 - 2 * ty);
+        const a = at(ix, iy) + (at(ix + 1, iy) - at(ix, iy)) * tx;
+        const b = at(ix, iy + 1) + (at(ix + 1, iy + 1) - at(ix, iy + 1)) * tx;
+        return a + (b - a) * ty;
+      };
+    };
+    const clusterFill = (px, palette, { cell = 8, grain = 0.12, top = 0, diag = 0, bias = 0, contrast = 1.9 } = {}) => {
+      const pal = [...palette].sort((a, b) => lum(a) - lum(b));
+      const big = gridNoise(cell), small = gridNoise(cell / 2);
+      for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
+        let v = big(x, y) * 0.6 + small(x, y) * 0.4;
+        v = (v - 0.5) * contrast + 0.5 + bias + (r() - 0.5) * grain - (y / 15 - 0.5) * top - ((x + y) / 30 - 0.5) * diag;
+        px(x, y, pal[Math.max(0, Math.min(pal.length - 1, Math.floor(v * pal.length)))]);
+      }
+    };
 
-    tile(T.grassTop, (px) => {
-      noiseFill(px, season.grass, grassW);
-      if (season.snow) for (let i = 0; i < 6; i++) px(Math.floor(r() * S), Math.floor(r() * S), '#c9d8ea');
-    });
+    const DIRT = ['#5c3a3e', '#74493a', '#8a5c40', '#9e6e4a'];
+
+    const grassSorted = [...season.grass].sort((a, b) => lum(a) - lum(b));
+    tile(T.grassTop, (px) => clusterFill(px, season.grass, { cell: 4, grain: 0.14, bias: 0.12, contrast: 1.1 }));
     tile(T.grassSide, (px) => {
-      noiseFill(px, DIRT, [0.4, 0.3, 0.2, 0.1]);
+      clusterFill(px, DIRT, { cell: 8, grain: 0.1, top: 0.5 });
+      // A soft scalloped overhang: a lit top row, the body, and a darker lip.
+      const ph = r() * 6;
       for (let x = 0; x < S; x++) {
-        const depth = 3 + (r() < 0.45 ? 1 : 0) + (r() < 0.2 ? 1 : 0) + (r() < 0.08 ? 2 : 0);
-        for (let y = 0; y < depth; y++) px(x, y, pick(season.grass));
+        const depth = 6 + Math.round(1.5 + Math.sin(x * 0.8 + ph) * 1.8 + Math.sin(x * 2.1) * 0.7);
+        for (let y = 0; y < depth; y++) px(x, y, y === 0 ? grassSorted[3] : y === depth - 1 ? grassSorted[0] : grassSorted[y < 3 ? 2 : (x * 3 + y) % 5 === 0 ? 2 : 1]);
       }
     });
-    tile(T.dirt, (px) => {
-      noiseFill(px, DIRT, [0.4, 0.3, 0.2, 0.1]);
-      for (let i = 0; i < 6; i++) px(Math.floor(r() * S), Math.floor(r() * S), '#5a3822');
-    });
+    tile(T.dirt, (px) => clusterFill(px, DIRT, { cell: 4, grain: 0.12, contrast: 1.3 }));
+    const STONE = ['#666a82', '#7e8296', '#9498aa', '#acb0c0'];
     const stoneFill = (px) => {
-      noiseFill(px, ['#8f8f93', '#828287', '#9c9ca0', '#76767b'], [0.35, 0.3, 0.2, 0.15]);
-      for (let i = 0; i < 5; i++) {
-        const y = Math.floor(r() * S), x0 = Math.floor(r() * S), len = 2 + Math.floor(r() * 4);
-        for (let x = x0; x < x0 + len; x++) px(x % S, y, '#6a6a70');
+      clusterFill(px, STONE, { cell: 8, grain: 0.08, top: 0.35 });
+      for (let i = 0; i < 3; i++) {
+        const y = 2 + Math.floor(r() * 12), x0 = Math.floor(r() * S), len = 3 + Math.floor(r() * 4);
+        for (let x = x0; x < x0 + len; x++) { px(x % S, y, STONE[0]); px(x % S, y - 1, STONE[3]); }
       }
     };
     tile(T.stone, stoneFill);
-    tile(T.sand, (px) => noiseFill(px, ['#e8d7a0', '#dccb92', '#f0e2b0', '#d2c088'], [0.4, 0.3, 0.2, 0.1]));
+    tile(T.sand, (px) => clusterFill(px, ['#d2b886', '#e2cc9a', '#ecdaaa', '#f6e8c2'], { cell: 8, grain: 0.08, bias: 0.1 }));
     tile(T.logSide, (px) => {
-      const cols = ['#6b4a2b', '#5c3f24', '#7a5633', '#523720'];
+      const cols = ['#6e4c36', '#5e4030', '#82593c', '#4c3228'];
       for (let x = 0; x < S; x++) {
         const base = cols[(x * 7 + 3) % 4 === 0 ? 3 : x % 3];
         for (let y = 0; y < S; y++) px(x, y, r() < 0.12 ? pick(cols) : base);
@@ -162,42 +187,66 @@ export function createAtlas() {
       }
     });
     [T.leaves0, T.leaves1, T.leaves2].forEach((id, i) => tile(id, (px) => {
-      const pal = season.leaves[i];
-      for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
-        if (season.snow && r() < (y < 6 ? 0.55 : 0.12)) { px(x, y, r() < 0.8 ? '#ffffff' : '#dfe9f5'); continue; }
-        // Soft clusters: light on top-left, darker towards bottom-right, little noise.
-        const v = r() + (x + y - 15) * 0.02;
-        px(x, y, pal[v < 0.2 ? 2 : v < 0.75 ? 0 : v < 0.93 ? 1 : 3]);
+      // Bunches of leaves: dark gaps behind, then overlapping round clumps, each lit from the
+      // top-left with a darker lower rim, so a canopy reads as foliage rather than a flat colour.
+      const pal = [...season.leaves[i]].sort((a, b) => lum(a) - lum(b));
+      for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) px(x, y, r() < 0.25 ? pal[1] : pal[0]);
+      const clumps = [];
+      for (let gy = 0; gy < 2; gy++) for (let gx = 0; gx < 2; gx++) {
+        clumps.push([gx * 8 + (gy % 2) * 4 + 2 + r() * 2, gy * 8 + 2 + r() * 2, 4 + r() * 1.3]);
+      }
+      clumps.push([r() * 16, r() * 16, 3 + r()]);
+      clumps.sort((a, b) => a[1] - b[1]);                      // lower clumps overlap the upper ones
+      for (const [cx, cy, rad] of clumps) {
+        for (let dy = -6; dy <= 6; dy++) for (let dx = -6; dx <= 6; dx++) {
+          const d = Math.hypot(dx, dy * 1.1);
+          if (d > rad) continue;
+          const t = (dx + dy * 1.3) / (rad * 2.2);
+          const c = d > rad - 0.9 && dx + dy > 0 ? pal[0] : t < -0.32 ? pal[3] : t < 0.12 ? pal[2] : pal[1];
+          px(mod(Math.round(cx + dx)), mod(Math.round(cy + dy)), c);
+        }
+        // a few bright leaf tips on the lit side
+        for (let k = 0; k < 3; k++) px(mod(Math.round(cx - 1 - r() * 2)), mod(Math.round(cy - 1 - r() * 2)), pal[3]);
+      }
+      if (season.snow) {
+        const ph = r() * 6;
+        for (let x = 0; x < S; x++) {
+          const d = 4 + Math.round(Math.sin(x * 0.7 + ph) * 1.5);
+          for (let y = 0; y < d; y++) px(x, y, y === d - 1 ? '#c8d8ee' : '#f6f9fd');
+        }
       }
     }));
     tile(T.planks, (px) => {
-      const cols = ['#b5874f', '#a67a46', '#c09358'];
+      const cols = ['#c08c56', '#b0804e', '#ca9a62'];
       for (let row = 0; row < 4; row++) {
         const base = cols[row % 3], seam = (row * 5 + 3) % S;
         for (let y = row * 4; y < row * 4 + 4; y++) for (let x = 0; x < S; x++) {
           const edge = y % 4 === 3 || x === seam;
-          px(x, y, edge ? '#7d5a33' : r() < 0.1 ? '#9c6f40' : base);
+          px(x, y, edge ? '#7a5240' : y % 4 === 0 ? '#d8aa70' : r() < 0.06 ? '#a87448' : base);
         }
       }
     });
     tile(T.cobble, (px) => {
-      noiseFill(px, ['#5f5f64'], null);
+      noiseFill(px, ['#585a6e'], null);
+      // Rounded stones, lit top-left with a shaded lower rim.
       for (let i = 0; i < 9; i++) {
         const cx = Math.floor(r() * S), cy = Math.floor(r() * S), rad = 2 + Math.floor(r() * 2);
-        const c = pick(['#8f8f95', '#7d7d83', '#9c9ca2', '#86868c']);
+        const [lo, mid, hi] = pick([['#6c6e84', '#8a8ca0', '#a8aabc'], ['#747088', '#9290a4', '#b0aec0'], ['#686e80', '#868c9c', '#a4aab8']]);
         for (let y = -rad; y <= rad; y++) for (let x = -rad; x <= rad; x++) {
-          if (x * x + y * y <= rad * rad) px(mod(cx + x), mod(cy + y), c);
+          if (x * x + y * y > rad * rad) continue;
+          const c = x + y < -rad * 0.6 ? hi : x + y > rad * 0.8 ? lo : mid;
+          px(mod(cx + x), mod(cy + y), c);
         }
       }
       if (seasonName === 'spring' || seasonName === 'summer') for (let i = 0; i < 6; i++) px(Math.floor(r() * S), Math.floor(r() * S), '#4f8a3a');
     });
     tile(T.roof, (px) => {
-      const cols = ['#7a3b2a', '#6b3324', '#8a4532'];
+      const cols = ['#a44c3a', '#943f34', '#b2583e'];
       for (let row = 0; row < 4; row++) {
         const off = row % 2 ? 4 : 0;
         for (let y = row * 4; y < row * 4 + 4; y++) for (let x = 0; x < S; x++) {
           const edge = y % 4 === 3 || (x + off) % 8 === 0;
-          px(x, y, edge ? '#4a2318' : y % 4 === 0 ? '#9a5540' : cols[(row + (x + off >> 3)) % 3]);
+          px(x, y, edge ? '#7a3634' : y % 4 === 0 ? '#bc6650' : cols[(row + (x + off >> 3)) % 3]);
         }
       }
       if (season.snow) for (let x = 0; x < S; x++) for (let y = 0; y < 3 + (r() < 0.5 ? 1 : 0); y++) px(x, y, '#f4f8fc');
@@ -213,9 +262,15 @@ export function createAtlas() {
       }
     });
     tile(T.path, (px) => {
-      noiseFill(px, ['#9c7b4f', '#8c6d45', '#ab8a5c', '#7f6240'], [0.35, 0.3, 0.2, 0.15]);
-      for (let i = 0; i < 4; i++) px(Math.floor(r() * S), Math.floor(r() * S), '#b9b2a2');
-      if (season.snow) for (let i = 0; i < 70; i++) px(Math.floor(r() * S), Math.floor(r() * S), '#eef3f9');
+      clusterFill(px, ['#8a6a54', '#a2825e', '#b8986e', '#ccb286'], { cell: 4, grain: 0.15, bias: 0.05 });
+      for (let i = 0; i < 4; i++) { const x = Math.floor(r() * 15), y = Math.floor(r() * 15); px(x, y, '#ddd2bc'); px(x + 1, y + 1, '#9a8a80'); }
+      if (season.snow) {                                    // trodden snow: patches with a few gaps
+        const n = gridNoise(4);
+        for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
+          const v = n(x, y) + (r() - 0.5) * 0.2;
+          if (v > 0.32) px(x, y, v > 0.7 ? '#f8fbfe' : v > 0.5 ? '#eef3f9' : '#d8e2f0');
+        }
+      }
     });
     tile(T.birch, (px) => {
       noiseFill(px, ['#e8e4dc', '#d8d4cc', '#f2efe8'], [0.5, 0.3, 0.2]);
@@ -302,11 +357,13 @@ export function createAtlas() {
     // Water (or ice in winter): its own repeating texture.
     const wg = waterCanvas.getContext('2d');
     const wr = rng(7);
-    const wpal = season.snow ? ['#cfe6f5', '#bcdcf0', '#e2f1fa', '#c4e0f2'] : ['#3f76c4', '#4a82cf', '#3a6bb5', '#5b93da'];
+    // Open water is near-white here and gets its colour from the depth bands (vertex colours);
+    // ice keeps its own pale blues.
+    const wpal = season.snow ? ['#cfe6f5', '#bcdcf0', '#e2f1fa', '#c4e0f2'] : ['#e6eef6', '#dce6f2', '#eef4fa', '#d4e0ee'];
     for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) { wg.fillStyle = wpal[Math.floor(wr() * 4)]; wg.fillRect(x, y, 1, 1); }
-    wg.fillStyle = season.snow ? '#a6c8e0' : '#8ab8ec';
-    for (let i = 0; i < 5; i++) {
-      const y = Math.floor(wr() * S), x0 = Math.floor(wr() * S), len = 3 + Math.floor(wr() * 5);
+    wg.fillStyle = season.snow ? '#a6c8e0' : '#ffffff';
+    for (let i = 0; i < 4; i++) {
+      const y = Math.floor(wr() * S), x0 = Math.floor(wr() * S), len = 2 + Math.floor(wr() * 4);
       for (let x = x0; x < x0 + len; x++) wg.fillRect(x % S, season.snow ? (y + x - x0) % S : y, 1, 1);
     }
 

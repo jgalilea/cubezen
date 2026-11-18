@@ -447,7 +447,48 @@ export function createProps(scene, world) {
   boat.position.copy(boatHome);
   scene.add(boat);
 
+  // ---- mushrooms at the foot of trees: red caps with white spots, and brown ones ----
+  const shrooms = [];
+  for (const m of world.mushrooms) {
+    const s = m.s;
+    shrooms.push(piece(0.1 * s, 0.22 * s, 0.1 * s, m.x, m.y + 0.11 * s, m.z, '#efe6d6'));
+    shrooms.push(piece(0.32 * s, 0.12 * s, 0.32 * s, m.x, m.y + 0.26 * s, m.z, m.red ? '#d84a3a' : '#a8744a'));
+    shrooms.push(piece(0.2 * s, 0.07 * s, 0.2 * s, m.x, m.y + 0.35 * s, m.z, m.red ? '#e85c48' : '#bc8a5a'));
+    if (m.red) shrooms.push(piece(0.06 * s, 0.03, 0.06 * s, m.x + 0.06 * s, m.y + 0.39 * s, m.z - 0.04 * s, '#ffffff'));
+  }
+  if (shrooms.length) {
+    const shroomMesh = merged(shrooms);
+    scene.add(shroomMesh);
+    seasonal.mushrooms = [shroomMesh];
+  }
+
+  // ---- ivy climbing the cabin's front and west walls, recoloured per season ----
+  const ivy = [];
+  const ivyShades = ['#ffffff', '#d8d8d8', '#bcbcbc', '#ececec'];
+  const vine = (x, z, yTop, len, alongX, out) => {                 // a dangling run of leaf clusters
+    let o = 0;
+    for (let k = 0; k < len; k++) {
+      const y = yTop - k * 0.3;
+      o += (r() - 0.5) * 0.18;
+      const sz = 0.2 + r() * 0.14;
+      ivy.push(piece(alongX ? sz : 0.1, sz, alongX ? 0.1 : sz, x + (alongX ? o : out), y, z + (alongX ? out : o), ivyShades[k % 4]));
+      if (r() < 0.5) ivy.push(piece(alongX ? 0.16 : 0.1, 0.16, alongX ? 0.1 : 0.16, x + (alongX ? o + (r() < 0.5 ? -0.2 : 0.2) : out), y - 0.1, z + (alongX ? out : o + (r() < 0.5 ? -0.2 : 0.2)), ivyShades[(k + 1) % 4]));
+    }
+  };
+  const ivyZ = cabin.z1 + 1.06, ivyX = cabin.x0 - 0.06, eave = G + 5.8;
+  for (const [x, len] of [[64.4, 15], [64.9, 9], [65.5, 5], [68.1, 4], [70.9, 4], [73.5, 6], [74.4, 12]]) vine(x, ivyZ, eave, len, true, 0);
+  for (const [z, len] of [[52.5, 14], [53.2, 8], [55.4, 4], [57.6, 5], [58.6, 12], [59.6, 15]]) vine(ivyX, z, eave, len, false, 0);
+  // and along the eave itself
+  for (let x = cabin.x0 + 0.3; x < cabin.x1 + 0.8; x += 0.32) if (r() < 0.75) ivy.push(piece(0.28, 0.22, 0.1, x, eave + 0.05 - r() * 0.15, ivyZ, ivyShades[Math.floor(r() * 4)]));
+  const ivyMat = new THREE.MeshLambertMaterial({ vertexColors: true, color: 0x4f8f44 });
+  const ivyMesh = new THREE.Mesh(mergeGeometries(ivy), ivyMat);
+  ivyMesh.castShadow = ivyMesh.receiveShadow = true;
+  scene.add(ivyMesh);
+
   function setSeason(name) {
+    ivyMat.color.set({ spring: '#5ea04c', summer: '#3f8a46', autumn: '#c4482e', winter: '#5a4a3c' }[name]);
+    ivyMesh.visible = true;
+    for (const o of seasonal.mushrooms || []) o.visible = name !== 'winter';
     for (const o of seasonal.winter) o.visible = name === 'winter';
     for (const o of seasonal.autumn) o.visible = name === 'autumn';
     for (const o of seasonal.flowers) o.visible = name !== 'winter';
