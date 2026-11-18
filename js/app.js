@@ -97,8 +97,10 @@
     handle('stop', () => { if (Ambience.playing) togglePlay(); });
   }
 
-  const KINDS = ['music', 'rain', 'fire'];
+  const KINDS = ['music', 'rain', 'fire', 'nature', 'city'];
   const prefs = store.get('prefs', { music: 0.6, rain: 0, fire: 0.35 });
+  prefs.nature ??= 0.3;                          // added later: older saves don't have them
+  prefs.city ??= 0.3;
   function setVolume(kind, v, save = true) {
     const el = $('#vol-' + kind);
     el.value = v;
@@ -124,7 +126,7 @@
     if (prefs.unmute) {
       const back = prefs.unmute;
       delete prefs.unmute;
-      KINDS.forEach((k) => setVolume(k, back[k]));
+      KINDS.forEach((k) => setVolume(k, back[k] ?? prefs[k]));
       toast('Sound on');
     } else {
       const before = Object.fromEntries(KINDS.map((k) => [k, prefs[k]]));
@@ -380,9 +382,14 @@
   let worldPrefs = store.get('world', null);
   if (!worldPrefs || worldPrefs.v !== 2) worldPrefs = { time: 'clock', season: 'auto', v: 2 };
   worldPrefs.scene ??= 'valley';
+  const urlScene = new URLSearchParams(location.search).get('scene');
   function renderWorld() {
     document.querySelectorAll('#scene-tabs .tab').forEach((t) => t.classList.toggle('active', t.dataset.scene === worldPrefs.scene));
     Scene.setScene(worldPrefs.scene);
+    // Each scene has its own ambience slider (Nature in the valley, City in the city).
+    const scene = urlScene === 'city' || urlScene === 'valley' ? urlScene : worldPrefs.scene;
+    document.querySelectorAll('.mix[data-scene]').forEach((m) => { m.hidden = m.dataset.scene !== scene; });
+    Ambience.setScene(scene);
     document.querySelectorAll('#time-tabs .tab').forEach((t) => t.classList.toggle('active', t.dataset.time === worldPrefs.time));
     document.querySelectorAll('#season-tabs .tab').forEach((t) => t.classList.toggle('active', t.dataset.season === worldPrefs.season));
     Scene.setTimeMode(worldPrefs.time);

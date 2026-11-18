@@ -11,7 +11,7 @@ const X0 = -64, X1 = 64, Z0 = -284, Z1 = 22, H = 150;
 const W = X1 - X0, D = Z1 - Z0;
 export const CAM = { x: 0.5, y: 4.4, z: 16 };
 export const CROSS = { z0: -46, z1: -36 };
-export const BRIDGE = { z0: -96, z1: -92, y: G + 11 };
+export const BRIDGE = { z0: -72, z1: -68, y: G + 11 };
 export const END_Z = -203;                // front face of the tower that closes the street
 
 // Block ids are atlas tile index + 1.
@@ -56,7 +56,7 @@ export function generateCity() {
       else id = B.asphalt;
     } else if (inCross) id = walk(x) ? B.zebraX : B.asphalt;
     else if (walk(x)) id = x === 6 || x === -6 ? B.curb : B.walk;
-    else if (z >= -98 && z <= -90) id = B.asphalt;     // the lane under the bridge
+    else if (z >= BRIDGE.z0 - 2 && z <= BRIDGE.z1 + 2) id = B.asphalt;     // the lane under the bridge
     set(x, 0, z, id);
   }
 
@@ -155,8 +155,8 @@ export function generateCity() {
   }
   for (const s of [-1, 1]) {
     rowOf(s, 19, -31);
-    rowOf(s, -51, -89);
-    rowOf(s, -99, END_Z - 1);
+    rowOf(s, -51, BRIDGE.z1 + 3);
+    rowOf(s, BRIDGE.z0 - 3, END_Z - 1);
   }
 
   // The tower that closes the street, with a big screen, and taller towers behind it.
@@ -190,11 +190,13 @@ export function generateCity() {
   // ---------- railway bridge ----------
   for (let x = X0; x < X1; x++) for (let z = BRIDGE.z0; z <= BRIDGE.z1; z++) {
     set(x, BRIDGE.y, z, B.steel);
-    if (z === BRIDGE.z0 || z === BRIDGE.z1) { set(x, BRIDGE.y + 1, z, B.steel); set(x, BRIDGE.y + 2, z, B.steel); }
+    // A tall girder at the back, a low one at the front so the whole train shows.
+    if (z === BRIDGE.z0) { set(x, BRIDGE.y + 1, z, B.steel); set(x, BRIDGE.y + 2, z, B.steel); }
+    else if (z === BRIDGE.z1) set(x, BRIDGE.y + 1, z, B.steel);
     else set(x, BRIDGE.y + 1, z, B.rail);
   }
-  for (const px of [-11, -10, 10, 11]) for (const pz of [-95, -94, -93]) for (let y = G; y < BRIDGE.y; y++) set(px, y, pz, B.steel);
-  for (const px of [-30, -29, 29, 30, -52, -51, 51, 52]) for (const pz of [-95, -94, -93]) for (let y = G; y < BRIDGE.y; y++) set(px, y, pz, B.steel);
+  for (const px of [-11, -10, 10, 11]) for (let pz = BRIDGE.z0 + 1; pz < BRIDGE.z1; pz++) for (let y = G; y < BRIDGE.y; y++) set(px, y, pz, B.steel);
+  for (const px of [-30, -29, 29, 30, -52, -51, 51, 52]) for (let pz = BRIDGE.z0 + 1; pz < BRIDGE.z1; pz++) for (let y = G; y < BRIDGE.y; y++) set(px, y, pz, B.steel);
 
   // ---------- rooftops ----------
   for (const { b, m, x, z, h } of rooftops) {
@@ -230,7 +232,7 @@ export function generateCity() {
     vending.push({ x: vx + 0.5, z: vz + 0.5 });
     light(vx + 0.5 - Math.sign(vx) * 1.2, G + 1, vz + 0.5, '#d0e4ff', 1.4);
   }
-  const trees = [[6, -9], [-6, -16], [6, -26], [-6, -72], [6, -102], [-6, -126]];
+  const trees = [[6, -9], [-6, -16], [6, -26], [-6, -86], [6, -102], [-6, -126]];
   // Trunks and planters are props (thin meshes); the canopy is voxels so it gets AO and neon
   // light. It's a cluster of round clumps at different depths and heights, so the side facing
   // the camera steps in and out instead of reading as one flat slab, and it leans over the road.
@@ -308,7 +310,7 @@ export function buildCityMeshes(city) {
     const tiles = faceTiles(id);
     const isGround = y === 0;
     // Only the street, the cross street and the lane under the bridge can be seen from the camera.
-    if (isGround && !((x >= -12 && x <= 12 && z >= END_Z - 1) || (z >= CROSS.z0 - 1 && z <= CROSS.z1 + 1) || (z >= -98 && z <= -90))) continue;
+    if (isGround && !((x >= -12 && x <= 12 && z >= END_Z - 1) || (z >= CROSS.z0 - 1 && z <= CROSS.z1 + 1) || (z >= BRIDGE.z0 - 2 && z <= BRIDGE.z1 + 2))) continue;
     for (const f of FACES) {
       if (isGround && f.n[1] !== 1) continue;
       const nx = x + f.n[0], ny = y + f.n[1], nz = z + f.n[2];

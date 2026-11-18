@@ -6,7 +6,7 @@ import { createAtlas, SEASONS } from './textures.js';
 import { generateCity, buildCityMeshes, G, CAM, END_Z } from './build.js';
 import { createSignAtlas, paintSign, buildSignGeometry, createScreen } from './signs.js';
 import { createProps } from './props.js';
-import { createLife } from './life.js';
+import { createLife, createTraffic } from './life.js';
 
 // Same fields as the valley's keys, plus: neon (sign and baked light brightness), sat (grade
 // saturation), stars (how many show through the light pollution).
@@ -98,7 +98,8 @@ export function createScene(root, params) {
   }
 
   // Props add their light sources before the meshes bake them in.
-  const props = createProps(root, city, addGlow);
+  const traffic = createTraffic();
+  const props = createProps(root, city, addGlow, traffic);
 
   // ---------- blocks and ground, with baked neon light ----------
   const neonU = { value: 1 }, groundNeonU = { value: 1 }, skyU = { value: new THREE.Color() }, sheenU = { value: 0 };
@@ -176,7 +177,7 @@ export function createScene(root, params) {
   mirror.add(screenReflect);
   root.add(mirror);
 
-  const life = createLife(root, addGlow, r);
+  const life = createLife(root, addGlow, r, traffic);
 
   let season = null, screenTimer = 0, night = 1, wet = 0.5;
   const signColor = new THREE.Color();
@@ -195,6 +196,8 @@ export function createScene(root, params) {
       const env = { k: { night: 0 }, rain: 0, fire: 0, season };
       for (let i = 0; i < n; i++) life.update(0.1, i * 0.1, env);
     },
+
+    dispose() { traffic.stop(); },
 
     applySeason(name) {
       season = name;

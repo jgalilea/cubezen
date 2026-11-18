@@ -141,7 +141,26 @@ function makeCar(r) {
   return g;
 }
 
-export function createLife(root, addGlow, seedRng) {
+// ---------- traffic lights ----------
+// One controller for the crossing: the main street and the cross street take turns, with amber
+// and a moment of all-red in between. People cross the main street while the cross street has
+// green (and the walk signal chirps).
+const PHASES = [['green', 'red', 16], ['amber', 'red', 3], ['red', 'red', 1.5], ['red', 'green', 12], ['red', 'amber', 3], ['red', 'red', 1.5]];
+export function createTraffic() {
+  const t = { main: 'green', cross: 'red', phase: 0, time: 0, walk: false };
+  const tell = (on) => dispatchEvent(new CustomEvent('cubezen:city', { detail: { type: 'crossing', on, duration: PHASES[3][2] } }));
+  t.update = (dt) => {
+    t.time += dt;
+    while (t.time > PHASES[t.phase][2]) { t.time -= PHASES[t.phase][2]; t.phase = (t.phase + 1) % PHASES.length; }
+    [t.main, t.cross] = PHASES[t.phase];
+    const walk = t.phase === 3;
+    if (walk !== t.walk) { t.walk = walk; tell(walk); }
+  };
+  t.stop = () => { if (t.walk) { t.walk = false; tell(false); } };
+  return t;
+}
+
+export function createLife(root, addGlow, seedRng, traffic) {
   const r = seedRng;
   // ---------- pedestrians ----------
   const people = [];
@@ -155,69 +174,105 @@ export function createLife(root, addGlow, seedRng) {
     p.z = anywhere ? 14 - r() * 170 : p.dir < 0 ? 22 : -160;
     p.x = p.lane;
     p.crossing = 0;
+    p.decided = p.wantsCross = false;
   }
   for (let i = 0; i < 22; i++) {
     const p = makePerson(r);
     p.phase = r() * 6;
+    p.walk = 0;
     placePerson(p, true);
     root.add(p.group);
     people.push(p);
   }
+  const ZEBRA_Z = CROSS.z1 + 3.5;                         // the crosswalk over the main street
   function updatePeople(dt, time, rain) {
     for (const p of people) {
-      // At the crossing some people walk over to the other side.
-      if (!p.crossing && Math.abs(p.z - (CROSS.z1 + 3.5)) < 0.3 && r() < 0.02 * 30 * dt) { p.crossing = 1; p.from = p.x; p.to = LANES[-p.side][0] + r() * 1.4; p.side = -p.side; p.lane = p.to; }
-      if (p.crossing) {
-        const step = p.speed * dt * Math.sign(p.to - p.from);
+      let moving = true;
+      // At the crosswalk some people decide to go over to the other side; they wait for the walk
+      // signal (only starting in its first seconds, so they're across before the cars go).
+      if (!p.crossing && !p.decided && Math.abs(p.z - ZEBRA_Z) < 0.4) { p.decided = true; p.wantsCross = r() < 0.4; }
+      if (p.decided && Math.abs(p.z - ZEBRA_Z) > 2) p.decided = false;
+      if (!p.crossing && p.decided && p.wantsCross) {
+        if (traffic.walk && traffic.time < 5) {
+          p.crossing = 1; p.wantsCross = false; p.from = p.x; p.to = LANES[-p.side][0] + r() * 1.4; p.side = -p.side; p.lane = p.to;
+        } else moving = false;
+      }
+      if (!moving) {
+        p.group.rotation.y = -p.side * Math.PI / 2;                 // facing the road, waiting
+      } else if (p.crossing) {
+        const step = p.speed * 1.3 * dt * Math.sign(p.to - p.from);
         p.x += step;
         if ((step > 0 && p.x >= p.to) || (step < 0 && p.x <= p.to)) { p.x = p.to; p.crossing = 0; }
         p.group.rotation.y = step > 0 ? Math.PI / 2 : -Math.PI / 2;
       } else {
-        p.z += p.dir * p.speed * dt;
+        // Walking along the pavement they cross the side street with the main street's green;
+        // otherwise they wait at the kerb.
+        const next = p.z + p.dir * p.speed * dt;
+        const into = (z) => z >= CROSS.z0 - 0.6 && z <= CROSS.z1 + 1.6;
+        if (!into(p.z) && into(next) && traffic.main !== 'green') moving = false;
+        else p.z = next;
         // Step around the yakitori stall.
         const target = p.side < 0 && Math.abs(p.z - YATAI.z) < 3.2 ? -5.7 : p.lane;
         p.x += (target - p.x) * Math.min(1, dt * 2);
         p.group.rotation.y = p.dir > 0 ? 0 : Math.PI;
         if (p.z < -165 || p.z > 24) placePerson(p, false);
       }
-      const t = time * p.speed * 5 + p.phase;
-      const swing = Math.sin(t) * 0.55;
+      if (moving) p.walk += dt * p.speed * 5;
+      const t = p.walk + p.phase;
+      const swing = moving ? Math.sin(t) * 0.55 : 0;
       p.legs[0].rotation.x = swing; p.legs[1].rotation.x = -swing;
       p.arms[0].rotation.x = -swing * 0.7;
       p.arms[1].rotation.x = p.umbrella.visible ? -0.9 : swing * 0.7;
-      p.group.position.set(p.x, G + Math.abs(Math.cos(t)) * 0.05, p.z);
+      p.group.position.set(p.x, G + (moving ? Math.abs(Math.cos(t)) * 0.05 : 0), p.z);
       p.umbrella.visible = rain > 0.15 + p.wantsUmbrella * 0.5;
     }
   }
 
   // ---------- cars ----------
-  // Traffic keeps to the left: the left lane drives away from the camera, the right one towards it.
+  // Traffic keeps to the left: the left lane drives away from the camera, the right one towards
+  // it. Each lane knows where its stop line is and which light it obeys; cars brake for red (and
+  // for amber when they can stop in time) and keep their distance from the car in front.
   const cars = [];
   const LANES_CAR = [
-    { x: -2.2, dir: -1, axis: 'z', from: 26, to: END_Z - 2, next: 3 },
-    { x: 3.2, dir: 1, axis: 'z', from: END_Z + 4, to: 28, next: 6 },
-    { z: CROSS.z0 + 2.7, dir: 1, axis: 'x', from: -70, to: 70, next: 2 },
-    { z: CROSS.z1 - 2.3, dir: -1, axis: 'x', from: 70, to: -70, next: 9 },
+    { x: -2.2, dir: -1, axis: 'z', from: 26, to: END_Z - 2, stop: CROSS.z1 + 4.8, light: 'main', next: 3 },
+    { x: 3.2, dir: 1, axis: 'z', from: END_Z + 4, to: 28, stop: CROSS.z0 - 4.3, light: 'main', next: 6 },
+    { z: CROSS.z0 + 2.7, dir: 1, axis: 'x', from: -70, to: 70, stop: -9.3, light: 'cross', next: 2 },
+    { z: CROSS.z1 - 2.3, dir: -1, axis: 'x', from: 70, to: -70, stop: 10.3, light: 'cross', next: 9 },
   ];
+  const HALF = 2.1, GAP = 1.8, BRAKE = 4, ACCEL = 2.5;
   function spawnCar(lane) {
+    // Wait while the last car is still near the start (a queue at a red light can reach back).
+    if (cars.some((c) => c.lane === lane && (c.pos - lane.from) * lane.dir < HALF * 2 + GAP + 3)) return false;
     const g = makeCar(r);
     const speed = 6 + r() * 4;
     root.add(g);
     // Headlights and taillights glow, and so do their reflections on the wet road.
-    const front = [-0.6, 0.6].map((x) => addGlow(0, 0, 0, 2.4, 0xfff0d0, 0.85, true));
-    const back = [-0.6, 0.6].map((x) => addGlow(0, 0, 0, 1.6, 0xff2a2a, 0.8, true));
-    const car = { g, lane, speed, pos: lane.from, front, back };
-    cars.push(car);
+    const front = [0, 1].map(() => addGlow(0, 0, 0, 2.4, 0xfff0d0, 0.85, true));
+    const back = [0, 1].map(() => addGlow(0, 0, 0, 1.6, 0xff2a2a, 0.8, true));
+    cars.push({ g, lane, v0: speed, v: speed, pos: lane.from, front, back });
+    return true;
   }
   const fwd = new THREE.Vector3(), side = new THREE.Vector3();
   function updateCars(dt) {
     for (const lane of LANES_CAR) {
       lane.next -= dt;
-      if (lane.next <= 0) { spawnCar(lane); lane.next = 5 + r() * 12; }
+      if (lane.next <= 0 && spawnCar(lane)) lane.next = 4 + r() * 12;
     }
     for (let i = cars.length - 1; i >= 0; i--) {
       const c = cars[i], L = c.lane;
-      c.pos += L.dir * c.speed * dt;
+      // Room ahead: up to the stop line when the light says stop, and up to the car in front.
+      let room = Infinity;
+      const toLine = (L.stop - (c.pos + L.dir * HALF)) * L.dir;
+      const light = traffic[L.light];
+      if (toLine > -0.3 && (light === 'red' || (light === 'amber' && toLine > (c.v * c.v) / (2 * BRAKE)))) room = toLine;
+      for (const o of cars) {
+        if (o === c || o.lane !== L) continue;
+        const d = (o.pos - c.pos) * L.dir;
+        if (d > 0) room = Math.min(room, d - HALF * 2 - GAP);
+      }
+      const want = Math.min(c.v0, Math.sqrt(2 * BRAKE * Math.max(0, room - 0.2)));
+      c.v = want > c.v ? Math.min(want, c.v + ACCEL * dt) : Math.max(want, c.v - BRAKE * 2.5 * dt);
+      c.pos += L.dir * c.v * dt;
       if ((L.dir > 0 && c.pos > L.to) || (L.dir < 0 && c.pos < L.to)) {
         root.remove(c.g);
         c.g.traverse((o) => o.geometry?.dispose());
@@ -228,42 +283,74 @@ export function createLife(root, addGlow, seedRng) {
       if (L.axis === 'z') { c.g.position.set(L.x, G, c.pos); c.g.rotation.y = L.dir > 0 ? 0 : Math.PI; fwd.set(0, 0, L.dir); side.set(1, 0, 0); }
       else { c.g.position.set(c.pos, G, L.z); c.g.rotation.y = L.dir > 0 ? Math.PI / 2 : -Math.PI / 2; fwd.set(L.dir, 0, 0); side.set(0, 0, 1); }
       const p = c.g.position;
+      // Brake lights flare when slowing down or standing.
+      const braking = c.v < c.v0 - 0.3;
       c.front.forEach((s, k) => s.userData.place(p.x + fwd.x * 2.3 + side.x * (k ? 0.6 : -0.6), G + 0.72, p.z + fwd.z * 2.3 + side.z * (k ? 0.6 : -0.6)));
-      c.back.forEach((s, k) => s.userData.place(p.x - fwd.x * 2.25 + side.x * (k ? 0.6 : -0.6), G + 0.74, p.z - fwd.z * 2.25 + side.z * (k ? 0.6 : -0.6)));
+      c.back.forEach((s, k) => {
+        s.userData.place(p.x - fwd.x * 2.25 + side.x * (k ? 0.6 : -0.6), G + 0.74, p.z - fwd.z * 2.25 + side.z * (k ? 0.6 : -0.6));
+        s.userData.level = braking ? 1.8 : 1;
+      });
     }
   }
 
   // ---------- the train ----------
+  // A long, slow commuter train, so it's on screen for a good while as it crosses the street:
+  // silver cars with a green stripe, lit windows, headlights at the front and red lights behind.
   const winCanvas = document.createElement('canvas');
-  winCanvas.width = 32; winCanvas.height = 8;
+  winCanvas.width = 44; winCanvas.height = 10;
   {
     const g = winCanvas.getContext('2d');
-    g.fillStyle = '#c8ccd4'; g.fillRect(0, 0, 32, 8);
-    g.fillStyle = '#2a8a5a'; g.fillRect(0, 6, 32, 1);
-    for (let i = 0; i < 5; i++) { g.fillStyle = i === 2 ? '#3a3a44' : '#fff4d8'; g.fillRect(1 + i * 6 + (i > 2 ? 1 : 0), 2, i === 2 ? 3 : 5, 3); }
+    g.fillStyle = '#d4d8e0'; g.fillRect(0, 0, 44, 10);
+    g.fillStyle = '#2aa86a'; g.fillRect(0, 7, 44, 1);
+    g.fillStyle = '#1e7a50'; g.fillRect(0, 8, 44, 1);
+    for (const [x, w, door] of [[1, 3, true], [6, 6], [14, 6], [22, 3, true], [27, 6], [35, 6], [42, 2, true]]) {
+      g.fillStyle = door ? '#9aa0ac' : '#fff2cc';
+      g.fillRect(x, door ? 1 : 2, w, door ? 8 : 4);
+      if (door) { g.fillStyle = '#fff2cc'; g.fillRect(x, 2, w, 3); }
+    }
   }
   const winTex = pixelTexture(winCanvas);
   const trainSide = new THREE.MeshLambertMaterial({ map: winTex, emissive: 0xffffff, emissiveMap: winTex, emissiveIntensity: 0 });
-  const trainBody = lambert('#c8ccd4');
+  const trainBody = lambert('#d4d8e0');
   const train = new THREE.Group();
-  const CARS = 5, LEN = 11;
+  const CARS = 8, LEN = 11, SPEED = 9;
   for (let i = 0; i < CARS; i++) {
-    const m = new THREE.Mesh(shadedBox(LEN - 0.4, 2.6, 2.8), [trainBody, trainBody, lambert('#9aa0ac'), trainBody, trainSide, trainSide]);
+    const m = new THREE.Mesh(shadedBox(LEN - 0.4, 2.7, 2.8), [trainBody, trainBody, lambert('#9aa0ac'), trainBody, trainSide, trainSide]);
     m.position.set(i * LEN, 0, 0);
     train.add(m);
   }
-  train.position.set(-200, BRIDGE.y + 2 + 1.3, (BRIDGE.z0 + BRIDGE.z1 + 1) / 2);
+  const trainZ = (BRIDGE.z0 + BRIDGE.z1 + 1) / 2, trainY = BRIDGE.y + 2 + 1.35;
+  train.position.set(-400, trainY, trainZ);
   root.add(train);
-  let trainWait = 6, trainDir = 1;
+  // Lights at both ends; which end is the front depends on the direction.
+  const ends = [-LEN / 2 + 0.1, (CARS - 0.5) * LEN - 0.1].map((x) => [-0.8, 0.8].map((dz) => addGlow(0, 0, 0, 2.2, 0xffffff, 0.9, true)));
+  for (const end of ends) for (const s of end) s.userData.level = 0;
+  const SPAN = 100;
+  let trainWait = 4, trainDir = 1;
   function updateTrain(dt) {
-    if (trainWait > 0) { trainWait -= dt; train.visible = false; return; }
-    train.visible = true;
-    train.position.x += trainDir * 17 * dt;
-    if ((trainDir > 0 && train.position.x > 90) || (trainDir < 0 && train.position.x < -90 - CARS * LEN)) {
-      trainWait = 25 + r() * 40;
-      trainDir = r() < 0.5 ? 1 : -1;
-      train.position.x = trainDir > 0 ? -90 - CARS * LEN : 90;
+    if (trainWait > 0) {
+      trainWait -= dt;
+      train.visible = false;
+      for (const end of ends) for (const s of end) s.userData.level = 0;    // fades its reflection too
+      if (trainWait <= 0) {
+        trainDir = r() < 0.5 ? 1 : -1;
+        train.position.x = trainDir > 0 ? -SPAN - CARS * LEN : SPAN;
+        const duration = (2 * SPAN + CARS * LEN) / SPEED;
+        dispatchEvent(new CustomEvent('cubezen:city', { detail: { type: 'train', dir: trainDir, duration } }));
+      }
+      return;
     }
+    train.visible = true;
+    train.position.x += trainDir * SPEED * dt;
+    ends.forEach((end, i) => {
+      const front = (i === 1) === (trainDir > 0);
+      end.forEach((s, k) => {
+        s.userData.place(train.position.x + (i ? (CARS - 0.5) * LEN : -LEN / 2) + (i ? 0.25 : -0.25), trainY - 0.6, trainZ + (k ? 0.8 : -0.8));
+        s.material.color.set(front ? 0xfff4dc : 0xff3030);
+        s.userData.level = front ? 1.3 : 0.8;
+      });
+    });
+    if ((trainDir > 0 && train.position.x > SPAN) || (trainDir < 0 && train.position.x < -SPAN - CARS * LEN)) trainWait = 20 + r() * 30;
   }
 
   return {
@@ -273,6 +360,7 @@ export function createLife(root, addGlow, seedRng) {
       tailPoolMat.opacity = 0.05 + night * 0.35;
     },
     update(dt, time, env) {
+      traffic.update(dt);
       updatePeople(dt, time, env.rain);
       updateCars(dt);
       updateTrain(dt);

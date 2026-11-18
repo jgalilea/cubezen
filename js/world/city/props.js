@@ -7,7 +7,7 @@ import { G, CROSS } from './build.js';
 
 export const YATAI = { x: -7.6, z: 2.5 };
 
-export function createProps(root, city, addGlow) {
+export function createProps(root, city, addGlow, traffic) {
   const lights = city.lights;
   const light = (x, y, z, color, intensity) => lights.push({ x, y, z, color: new THREE.Color(color), intensity });
   const poleMat = new THREE.MeshLambertMaterial({ color: 0x3a3844 });
@@ -171,7 +171,7 @@ export function createProps(root, city, addGlow) {
   smoke.frustumCulled = false;
   root.add(smoke);
 
-  let fireTimer = 0, signalT = 0;
+  let fireTimer = 0;
   return {
     applyTime(night) {
       lampMat.color.setScalar(0.55 + night * 0.45).multiply(new THREE.Color(0xffe2b0));
@@ -196,13 +196,12 @@ export function createProps(root, city, addGlow) {
         sPos[i * 3 + 2] = Y.z - 0.4 + (i % 5) * 0.2 + Math.cos(a + i) * 0.1;
       }
       sGeo.attributes.position.needsUpdate = true;
-      // Traffic lights: green 12 s, amber 3 s, red 15 s; the two sides are out of phase.
-      signalT += step;
-      signals.forEach((s, i) => {
-        const t = (signalT + i * 15) % 30, on = t < 12 ? 0 : t < 15 ? 1 : 2;
-        s.lamps.forEach((m, k) => { m.material = k === on ? signalMats[k] : offMat; });
-        s.glow.material.color.copy(signalMats[on].color);
-      });
+      // The heads face down the main street, so they show its light.
+      const on = { green: 0, amber: 1, red: 2 }[traffic.main];
+      for (const sg of signals) {
+        sg.lamps.forEach((m, k) => { m.material = k === on ? signalMats[k] : offMat; });
+        sg.glow.material.color.copy(signalMats[on].color);
+      }
     },
   };
 }
