@@ -189,6 +189,13 @@ export function createScene(root, params) {
     shadow: { target: new THREE.Vector3(0.5, 10, -50), extent: 95 },
     particles: (name) => SEASONS[name].particles,
 
+    // ?advance=N: fast-forward the people, cars and train N seconds, for previews.
+    preview() {
+      const n = Number(params.get('advance') || 0) * 10;
+      const env = { k: { night: 0 }, rain: 0, fire: 0, season };
+      for (let i = 0; i < n; i++) life.update(0.1, i * 0.1, env);
+    },
+
     applySeason(name) {
       season = name;
       atlas.paint(name);

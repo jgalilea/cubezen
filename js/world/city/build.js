@@ -231,12 +231,21 @@ export function generateCity() {
     light(vx + 0.5 - Math.sign(vx) * 1.2, G + 1, vz + 0.5, '#d0e4ff', 1.4);
   }
   const trees = [[6, -9], [-6, -16], [6, -26], [-6, -72], [6, -102], [-6, -126]];
+  // Trunks and planters are props (thin meshes); the canopy is voxels so it gets AO and neon
+  // light. It's a cluster of round clumps at different depths and heights, so the side facing
+  // the camera steps in and out instead of reading as one flat slab, and it leans over the road.
   for (const [tx, tz] of trees) {
-    set(tx, G, tz, B.planter);
-    for (let y = G + 1; y < G + 4; y++) set(tx, y, tz, B.trunk);
-    for (let y = G + 3; y < G + 6; y++) for (let dz = -2; dz <= 2; dz++) for (let dx = -2; dx <= 2; dx++) {
-      const dd = dx * dx + dz * dz + (y - G - 4) * (y - G - 4) * 1.5;
-      if (dd <= 4.2 && get(tx + dx, y, tz + dz) === B.AIR && !road(tx + dx)) set(tx + dx, y, tz + dz, B.leaves);
+    const lean = -Math.sign(tx);
+    const clumps = [[0, 5.2, 0, 1.9], [lean * 1.4, 4.7, 1.1, 1.5], [-lean * 0.8, 4.9, -1.2, 1.6], [lean * 0.5, 6.2, 0.3, 1.35], [-lean * 1.1, 4.3, 0.9, 1.15]];
+    for (let y = G + 2; y < G + 9; y++) for (let dz = -4; dz <= 4; dz++) for (let dx = -4; dx <= 4; dx++) {
+      const x = tx + dx, z = tz + dz, n = hash(x, y, z);
+      let inside = false;
+      for (const [cx, cy, cz, cr] of clumps) {
+        const ex = dx - cx, ey = (y + 0.5 - G - cy) * 1.15, ez = dz - cz;
+        const e = (ex * ex + ey * ey + ez * ez) / (cr * cr);
+        if (e < 0.6 || (e < 1 && n < 0.75)) { inside = true; break; }
+      }
+      if (inside && get(x, y, z) === B.AIR) set(x, y, z, B.leaves);
     }
   }
 
@@ -325,7 +334,9 @@ export function buildCityMeshes(city) {
         o.pos.push(vx, vy, vz);
         o.nor.push(...f.n);
         const s = AO[aos[i]], k = 1 - s;
-        o.col.push(s * t[0] * (1 - k * 0.25), s * t[1] * (1 - k * 0.2), Math.min(1, s * t[2] * (1 + k * 0.3)));
+        let l = 1;
+        if (id === B.leaves) l = (f.n[1] > 0 ? 1.2 : f.n[1] < 0 ? 0.55 : f.n[0] ? 0.78 : 0.95) * (0.82 + hash(x, y, z) * 0.3) * (0.8 + (y - G - 2) * 0.06);
+        o.col.push(s * t[0] * l * (1 - k * 0.25), s * t[1] * l * (1 - k * 0.2), Math.min(1.2, s * t[2] * l * (1 + k * 0.3)));
         field(vx, vy, vz, f.n, tmp);
         o.neon.push(tmp[0], tmp[1], tmp[2]);
       });

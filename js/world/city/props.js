@@ -26,6 +26,19 @@ export function createProps(root, city, addGlow) {
     light(x - s * 1.35, G + 5.6, zz, '#ffd8a0', 2.2);
   }
 
+  // ---------- street trees: a low stone planter, a slim trunk and two branches into the canopy ----------
+  const barkMat = new THREE.MeshLambertMaterial({ color: 0x4a362e });
+  const planterMat = new THREE.MeshLambertMaterial({ color: 0x7a7884 }), soilMat = new THREE.MeshLambertMaterial({ color: 0x3a2e2a });
+  for (const [tx, tz] of city.trees) {
+    const x = tx + 0.5, z = tz + 0.5;
+    for (const [w, d, dx, dz] of [[1.5, 0.18, 0, -0.66], [1.5, 0.18, 0, 0.66], [0.18, 1.5, -0.66, 0], [0.18, 1.5, 0.66, 0]]) box(w, 0.35, d, planterMat, x + dx, G + 0.175, z + dz);
+    box(1.2, 0.2, 1.2, soilMat, x, G + 0.1, z);
+    box(0.36, 4.4, 0.36, barkMat, x, G + 2.2, z);
+    const lean = Math.sign(-tx) * 0.5;                    // the tree leans a little towards the light over the road
+    box(0.24, 1.8, 0.24, barkMat, x + lean * 0.8, G + 3.9, z + 0.3).rotation.set(0.35, 0, -lean);
+    box(0.22, 1.6, 0.22, barkMat, x - lean * 0.6, G + 3.8, z - 0.4).rotation.set(-0.4, 0, lean * 0.8);
+  }
+
   // ---------- utility poles and their wires ----------
   const wirePts = [];
   const wire = (a, b, sag) => {

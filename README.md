@@ -99,6 +99,7 @@ Handy for previews and screenshots. `scene`, `time`, `t`, `season`, `fire` and `
 | `?fire=0.8` | Fix the campfire (or grill) intensity (0 to 1) |
 | `?rain=0.7` | Fix the rain (0 to 1) |
 | `?critter=rabbit\|birds\|ducks\|deer\|fox\|owl\|hedgehog&advance=10` | Spawn a visitor in the valley and fast-forward it N seconds |
+| `?scene=city&advance=20` | Fast-forward the city's people, cars and train N seconds |
 | `?shot` | Preserve the drawing buffer so the canvas can be read (screenshots) |
 
 ### Structure

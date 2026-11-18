@@ -1,18 +1,57 @@
 // People walking the pavements (umbrellas up when it rains), cars with their lights and a
 // commuter train crossing the bridge. Nothing here casts shadows: the shadow map is static.
 import * as THREE from 'three';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { pixelTexture } from '../common.js';
 import { G, CROSS, BRIDGE, END_Z } from './build.js';
 import { YATAI } from './props.js';
 
+// Boxes shaded per face like the voxels (bright tops, darker sides and undersides), so small
+// things read as solid even when the light is flat.
 const mats = new Map();
-const lambert = (c) => { if (!mats.has(c)) mats.set(c, new THREE.MeshLambertMaterial({ color: c })); return mats.get(c); };
-const part = (parent, w, h, d, color, x, y, z) => {
-  const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), typeof color === 'string' ? lambert(color) : color);
-  m.position.set(x, y, z);
-  parent.add(m);
-  return m;
-};
+const lambert = (c) => { if (!mats.has(c)) mats.set(c, new THREE.MeshLambertMaterial({ color: c, vertexColors: true })); return mats.get(c); };
+const SHADE = { px: 0.82, nx: 0.82, py: 1, ny: 0.45, pz: 0.7, nz: 0.7 };
+function shadedBox(w, h, d) {
+  const g = new THREE.BoxGeometry(w, h, d);
+  const n = g.attributes.normal, col = [];
+  for (let i = 0; i < n.count; i++) {
+    const x = n.getX(i), y = n.getY(i);
+    const k = y > 0.5 ? SHADE.py : y < -0.5 ? SHADE.ny : Math.abs(x) > 0.5 ? SHADE.px : SHADE.pz;
+    col.push(k, k, k);
+  }
+  g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+  return g;
+}
+// A kit collects coloured boxes and merges them into one mesh: one draw call per car or limb.
+const paintMat = new THREE.MeshLambertMaterial({ color: 0xffffff, vertexColors: true });
+const glowMat = new THREE.MeshBasicMaterial({ color: 0xffffff, vertexColors: true, toneMapped: false });
+function kit() {
+  const parts = [], c = new THREE.Color();
+  return {
+    box(w, h, d, color, x, y, z, lit = false) {
+      const g = lit ? new THREE.BoxGeometry(w, h, d) : shadedBox(w, h, d);
+      c.set(color);
+      const col = g.attributes.color ?? new THREE.Float32BufferAttribute(new Float32Array(g.attributes.position.count * 3).fill(1), 3);
+      // Plus a sheen: the purple sky and the neon caught on the paint, strongest on top, so even a
+      // black car keeps its shape at night.
+      const n = g.attributes.normal;
+      for (let i = 0; i < col.count; i++) {
+        const up = lit ? 0 : n.getY(i) > 0.5 ? 1 : n.getY(i) < -0.5 ? 0 : 0.35;
+        col.setXYZ(i, col.getX(i) * c.r + up * 0.05, col.getY(i) * c.g + up * 0.035, col.getZ(i) * c.b + up * 0.09);
+      }
+      g.setAttribute('color', col);
+      g.translate(x, y, z);
+      parts.push(g);
+      return this;
+    },
+    mesh(lit = false) {
+      const m = new THREE.Mesh(mergeGeometries(parts), lit ? glowMat : paintMat);
+      for (const p of parts) p.dispose();
+      return m;
+    },
+  };
+}
+const umbrellaMats = new Map();
 
 const COATS = ['#2a2a3a', '#4a4a5e', '#7a3a4a', '#3a5a7a', '#c8c0b0', '#5a6a4a', '#8a6a4a', '#1e1e28', '#d86a8a', '#e8e4dc'];
 const PANTS = ['#22222e', '#3a3a4e', '#4a4038', '#2a3448'];
@@ -23,53 +62,82 @@ const UMBRELLAS = ['#e8eef4', '#1e1e28', '#c83a4a', '#3a5aa8', '#e8eef4'];
 function makePerson(r) {
   const g = new THREE.Group();
   const pick = (a) => a[Math.floor(r() * a.length)];
-  const coat = pick(COATS), pants = pick(PANTS);
-  const legs = [-0.11, 0.11].map((x) => {
+  const coat = pick(COATS), pants = pick(PANTS), hair = pick(HAIR);
+  const limb = (x, y, build) => {
     const pivot = new THREE.Group();
-    pivot.position.set(x, 0.82, 0);
-    part(pivot, 0.17, 0.8, 0.2, pants, 0, -0.4, 0);
-    part(pivot, 0.18, 0.1, 0.26, '#1a1a20', 0, -0.78, 0.03);
+    pivot.position.set(x, y, 0);
+    pivot.add(build(kit()).mesh());
     g.add(pivot);
     return pivot;
-  });
-  part(g, 0.48, 0.66, 0.3, coat, 0, 1.15, 0);
-  const arms = [-0.3, 0.3].map((x) => {
-    const pivot = new THREE.Group();
-    pivot.position.set(x, 1.42, 0);
-    part(pivot, 0.13, 0.6, 0.16, coat, 0, -0.3, 0);
-    g.add(pivot);
-    return pivot;
-  });
-  part(g, 0.34, 0.34, 0.32, pick(SKIN), 0, 1.66, 0);
-  part(g, 0.37, 0.14, 0.35, pick(HAIR), 0, 1.84, -0.01);
-  part(g, 0.37, 0.2, 0.08, pick(HAIR), 0, 1.72, -0.16);
-  if (r() < 0.3) part(g, 0.3, 0.36, 0.14, pick(['#3a2a20', '#1a1a20', '#6a4a8a']), 0, 1.15, -0.22);   // a backpack
+  };
+  const legs = [-0.11, 0.11].map((x) => limb(x, 0.82, (k) => k.box(0.17, 0.8, 0.2, pants, 0, -0.4, 0).box(0.18, 0.1, 0.26, '#1a1a20', 0, -0.78, 0.03)));
+  const arms = [-0.3, 0.3].map((x) => limb(x, 1.42, (k) => k.box(0.13, 0.6, 0.16, coat, 0, -0.3, 0)));
+  const body = kit()
+    .box(0.48, 0.66, 0.3, coat, 0, 1.15, 0)
+    .box(0.34, 0.34, 0.32, pick(SKIN), 0, 1.66, 0)
+    .box(0.37, 0.14, 0.35, hair, 0, 1.84, -0.01)
+    .box(0.37, 0.2, 0.08, hair, 0, 1.72, -0.16);
+  if (r() < 0.3) body.box(0.3, 0.36, 0.14, pick(['#3a2a20', '#1a1a20', '#6a4a8a']), 0, 1.15, -0.22);   // a backpack
+  g.add(body.mesh());
   // Umbrella: a low eight-sided cone on a handle, held a little forward.
   const umbrella = new THREE.Group();
   const col = pick(UMBRELLAS);
-  const clear = col === '#e8eef4';
-  umbrella.add(new THREE.Mesh(new THREE.ConeGeometry(0.72, 0.32, 8), new THREE.MeshLambertMaterial({ color: col, transparent: clear, opacity: clear ? 0.6 : 1 })));
-  umbrella.children[0].position.y = 0.16;
-  part(umbrella, 0.04, 0.75, 0.04, '#2a2a30', 0, -0.3, 0);
+  if (!umbrellaMats.has(col)) { const clear = col === '#e8eef4'; umbrellaMats.set(col, new THREE.MeshLambertMaterial({ color: col, transparent: clear, opacity: clear ? 0.6 : 1 })); }
+  const canopy = new THREE.Mesh(new THREE.ConeGeometry(0.72, 0.32, 8), umbrellaMats.get(col));
+  canopy.position.y = 0.16;
+  umbrella.add(canopy, kit().box(0.04, 0.75, 0.04, '#2a2a30', 0, -0.3, 0).mesh());
   umbrella.position.set(0.12, 2.2, 0.1);
   g.add(umbrella);
   return { group: g, legs, arms, umbrella, wantsUmbrella: r() };
 }
 
+// Light on the road in front of a car and a red smudge behind it. Shared by all cars, so their
+// brightness is set once per frame for the time of day.
+function poolTexture(long) {
+  const c = document.createElement('canvas');
+  c.width = 16; c.height = 32;
+  const g = c.getContext('2d');
+  for (let y = 0; y < 32; y++) for (let x = 0; x < 16; x++) {
+    const u = (x - 7.5) / 8, v = y / 31;
+    const a = long ? Math.max(0, 1 - v) * Math.max(0, 1 - Math.abs(u) / (0.45 + v * 0.55)) : Math.max(0, 1 - Math.hypot(u, (v - 0.5) * 2));
+    g.fillStyle = `rgba(255,255,255,${(a * a).toFixed(3)})`;
+    g.fillRect(x, y, 1, 1);
+  }
+  return pixelTexture(c);
+}
+const beamMat = new THREE.MeshBasicMaterial({ map: poolTexture(true), color: 0xfff0d0, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false });
+const tailPoolMat = new THREE.MeshBasicMaterial({ map: poolTexture(false), color: 0xff2a2a, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false });
+
+const CAR_COLOURS = ['#e8e8ec', '#1e1e26', '#e8c43a', '#8a2a30', '#9aa0ac', '#2a4a8a', '#3a6a5a'];
 function makeCar(r) {
   const g = new THREE.Group();
-  const kinds = [['#e8e8ec', '#2a2e3a'], ['#1a1a22', '#2a2e3a'], ['#e8c43a', '#2a2e3a'], ['#8a2a30', '#2a2e3a'], ['#9aa0ac', '#2a2e3a'], ['#2a4a8a', '#2a2e3a']];
-  const [body, glass] = kinds[Math.floor(r() * kinds.length)];
-  part(g, 1.8, 0.75, 4.2, body, 0, 0.6, 0);
-  part(g, 1.6, 0.6, 2.2, glass, 0, 1.25, -0.2);
-  part(g, 1.62, 0.08, 2.0, body, 0, 1.58, -0.2);
-  for (const [x, z] of [[-0.85, 1.3], [0.85, 1.3], [-0.85, -1.3], [0.85, -1.3]]) part(g, 0.2, 0.5, 0.5, '#141418', x, 0.25, z);
-  if (body === '#e8c43a') part(g, 0.5, 0.22, 0.3, '#f4f0e0', 0, 1.73, 0);       // the taxi roof light
-  const head = new THREE.MeshBasicMaterial({ color: 0xfff4d8 }), tail = new THREE.MeshBasicMaterial({ color: 0xff2a2a });
-  for (const x of [-0.6, 0.6]) {
-    part(g, 0.36, 0.16, 0.05, head, x, 0.72, 2.11);
-    part(g, 0.32, 0.14, 0.05, tail, x, 0.74, -2.11);
+  const body = CAR_COLOURS[Math.floor(r() * CAR_COLOURS.length)];
+  const glass = '#1a2030', trim = '#24242c';
+  const k = kit()
+    .box(1.8, 0.5, 4.2, body, 0, 0.47, 0)                         // lower body
+    .box(1.76, 0.2, 3.9, body, 0, 0.82, -0.05)                    // waist, so the bonnet and boot step down
+    .box(1.84, 0.06, 4.0, trim, 0, 0.73, 0)                       // a dark crease along the side
+    .box(1.56, 0.56, 2.1, glass, 0, 1.2, -0.2)                    // the cabin
+    .box(1.58, 0.1, 1.9, '#4e5c7a', 0, 1.3, -0.2)                 // sky caught in the side windows
+    .box(1.5, 0.08, 1.8, body, 0, 1.52, -0.25);                   // roof
+  for (const z of [-2.12, 2.12]) {
+    k.box(1.86, 0.2, 0.14, trim, 0, 0.3, z);                      // bumpers
+    k.box(0.46, 0.16, 0.04, '#e8e8e0', 0, 0.48, z + Math.sign(z) * 0.07);   // number plates
   }
+  for (const [x, z] of [[-0.86, 1.3], [0.86, 1.3], [-0.86, -1.3], [0.86, -1.3]]) k.box(0.22, 0.56, 0.56, '#121216', x, 0.28, z);
+  for (const x of [-0.98, 0.98]) k.box(0.14, 0.12, 0.22, body, x, 1.0, 0.75);     // mirrors
+  if (body === '#e8c43a') k.box(0.5, 0.22, 0.3, '#f4f0e0', 0, 1.67, -0.2).box(1.82, 0.08, 1.2, '#2a2a2a', 0, 0.62, -0.3);   // taxi light and band
+  const lights = kit();
+  for (const x of [-0.62, 0.62]) lights.box(0.4, 0.14, 0.05, '#fff4d8', x, 0.68, 2.11, true).box(0.42, 0.12, 0.05, '#ff2a2a', x, 0.7, -2.11, true);
+  lights.box(1.0, 0.05, 0.05, '#ff2a2a', 0, 0.7, -2.11, true);    // light bar between the tail lights
+  g.add(k.mesh(), lights.mesh(true));
+  const beam = new THREE.Mesh(new THREE.PlaneGeometry(2.6, 9), beamMat);
+  beam.rotation.x = -Math.PI / 2;
+  beam.position.set(0, 0.03, 2.1 + 4.5);
+  const pool = new THREE.Mesh(new THREE.PlaneGeometry(2.4, 2), tailPoolMat);
+  pool.rotation.x = -Math.PI / 2;
+  pool.position.set(0, 0.03, -2.6);
+  g.add(beam, pool);
   return g;
 }
 
@@ -180,7 +248,7 @@ export function createLife(root, addGlow, seedRng) {
   const train = new THREE.Group();
   const CARS = 5, LEN = 11;
   for (let i = 0; i < CARS; i++) {
-    const m = new THREE.Mesh(new THREE.BoxGeometry(LEN - 0.4, 2.6, 2.8), [trainBody, trainBody, lambert('#9aa0ac'), trainBody, trainSide, trainSide]);
+    const m = new THREE.Mesh(shadedBox(LEN - 0.4, 2.6, 2.8), [trainBody, trainBody, lambert('#9aa0ac'), trainBody, trainSide, trainSide]);
     m.position.set(i * LEN, 0, 0);
     train.add(m);
   }
@@ -199,7 +267,11 @@ export function createLife(root, addGlow, seedRng) {
   }
 
   return {
-    applyTime(night) { trainSide.emissiveIntensity = 0.1 + night * 1.2; },
+    applyTime(night) {
+      trainSide.emissiveIntensity = 0.1 + night * 1.2;
+      beamMat.opacity = 0.08 + night * 0.4;
+      tailPoolMat.opacity = 0.05 + night * 0.35;
+    },
     update(dt, time, env) {
       updatePeople(dt, time, env.rain);
       updateCars(dt);

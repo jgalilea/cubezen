@@ -177,14 +177,19 @@ export function createAtlas() {
       for (let y = 0; y < S; y++) { px(3, y, '#9a9aa8'); px(12, y, '#9a9aa8'); }
       for (let y = 1; y < S; y += 4) for (let x = 1; x < 15; x++) if (x !== 3 && x !== 12) px(x, y, '#5a4a3e');
     });
+    // Leaves: soft clusters of light and shade with a few dark gaps, no grid to read as bricks.
     tile(T.leaves, (px) => {
       const L = season.leaves;
-      for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
-        if (snow && r() < 0.45) { px(x, y, r() < 0.5 ? L[2] : L[3]); continue; }
-        if (snow) { px(x, y, r() < 0.5 ? L[0] : L[1]); continue; }
-        const v = Math.min(3, Math.floor(r() * 2.2 + (y < 6 ? 1.4 : 0.6)));
-        px(x, y, L[v]);
+      if (snow) {
+        for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) px(x, y, r() < 0.45 ? (r() < 0.5 ? L[2] : L[3]) : (r() < 0.5 ? L[0] : L[1]));
+        return;
       }
+      fill(px, L, { cell: 3, grain: 0.55, bias: 0.06 });
+      for (let i = 0; i < 9; i++) {                            // highlights: little sunlit leaves
+        const x = Math.floor(r() * 15), y = Math.floor(r() * 15);
+        px(x, y, L[3]); px(x + 1, y, L[2]);
+      }
+      for (let i = 0; i < 7; i++) px(Math.floor(r() * S), Math.floor(r() * S), L[0]);
     });
     tile(T.trunk, (px) => { for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) px(x, y, x % 4 === 1 ? '#3a2a26' : r() < 0.3 ? '#5a4036' : '#4a342e'); });
     const neon = (id, tube, core) => tile(id, (px, glow) => {
