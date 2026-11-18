@@ -14,7 +14,7 @@
 
 Cubezen is a background page for focused work. Leave it open on a second screen: a 3D valley with a cabin, a campfire and a river changes with the time of day and the seasons, while generative piano, rain and fire play over it. A pomodoro timer and a task list sit on top, and all of it hides away when you just want the view.
 
-It runs entirely in the browser, with no sign-up and nothing to install.
+It runs entirely in the browser, with no sign-up. You can also install it as an app, and it keeps working offline.
 
 All art and music are original. The music is composed and synthesised live in the browser with the Web Audio API, so there are no audio files and no third-party copyright. Not affiliated with Mojang or Microsoft.
 
@@ -25,8 +25,13 @@ All art and music are original. The music is composed and synthesised live in th
 - **Seasons**: picked automatically from the date (the default) or chosen by hand. Colours, particles (petals, leaves, snow) and details of the world change; in winter the river freezes.
 - **Generative music**: ever-new piano pieces, each with its own mode, motif and structure, in the spirit of calm game soundtracks.
 - **Ambience**: rain and fire with their own volume; the rain and the campfire in the scene follow their sliders.
-- **Pomodoro**: 25-minute focus with 5 and 15-minute breaks, a chime when time is up and a count of today's sessions. Every fourth session leads to the long break.
-- **Tasks**: a simple list for the session.
+- **Sleep timer**: fade all sound out after 15, 30, 45, 60 or 90 minutes; the music pauses and the sliders end at 0.
+- **Pomodoro**: 25-minute focus with 5 and 15-minute breaks, a chime and a short note when time is up, and a count of today's sessions. Every fourth session leads to the long break. In its settings: 50/10 and 90/20 presets or your own lengths, starting the next phase on its own, and an optional notification that only shows when you're in another window. A running timer survives a reload or a closed tab.
+- **Tasks**: a simple list for the session. Double-click to edit, drag the handle (or use the arrow keys on it) to reorder, and clear the finished ones in one go.
+- **Installable and offline**: install it from the browser or the Widgets menu; after the first visit it opens without a connection.
+- **Media keys**: play/pause from your keyboard, headphones or the system's media controls, which show the current piece.
+- **Screen stays on** while the timer runs, so a tablet or laptop beside you doesn't go dark mid-session.
+- **Light on your machine**: the 3D world stops drawing whenever the page can't be seen (another tab, minimized, a locked screen) while the sound keeps playing; shadows are only redrawn when the sun moves; the audio engine rests when everything is silent; and slow computers get slightly lighter graphics on their own.
 - **Your own layout**: every widget can be minimized (`−`) or hidden (`×`); the music bar shrinks to just play/pause and the track; the **Widgets** menu brings hidden ones back, and the layout is remembered.
 - **Zen mode**: hides the interface and leaves only the landscape.
 
@@ -44,12 +49,19 @@ Screenshots are from the real app, with sample tasks. The four seasons are shown
 | Key | Action |
 | --- | --- |
 | `Space` | Play or pause the music |
+| `M` | Mute or unmute all sound |
+| `Z` | Sleep timer: off, 15, 30, 45, 60, 90 minutes |
+| `S` | Start or pause the timer |
+| `R` | Reset the timer |
+| `N` | Skip to the next phase |
+| `T` | New task |
 | `H` | Zen mode |
 | `F` | Fullscreen |
+| `?` | Show the shortcuts |
 
 ### Privacy
 
-Preferences, tasks and stats are saved in your browser (`localStorage`); there are no accounts and no server. The page does load Three.js from jsDelivr; the fonts are served from the repository.
+Preferences, tasks, stats and the running timer are saved in your browser (`localStorage`); there are no accounts and no server. The page loads Three.js from jsDelivr (the service worker keeps a copy for offline use); the fonts are served from the repository. Notifications are off unless you turn them on in the timer settings.
 
 ## Run it locally
 
@@ -84,8 +96,9 @@ Handy for previews and screenshots. `time`, `t`, `season` and `fire` take priori
 
 - `index.html`: interface and the Three.js import map
 - `css/style.css`: pixel-art UI
+- `manifest.webmanifest`, `sw.js`, `icons/`: install metadata, the offline service worker and the app icons
 - `fonts/`: Press Start 2P and VT323 (SIL Open Font License 1.1), self-hosted so the text doesn't jump on load
-- `js/app.js`: mixer, pomodoro, tasks, world panel, widget layout and shortcuts
+- `js/app.js`: mixer, sleep timer, pomodoro and its settings, tasks, world panel, widget layout, shortcuts and install
 - `js/composer.js`: generative composer (modes, voicings, motifs, piece structure); pure JS, no audio
 - `js/audio.js`: synthesised piano and pad that perform the composer's pieces, plus rain and fire
 - `js/world/main.js`: rendering, sky, day/night lighting, seasons and particles

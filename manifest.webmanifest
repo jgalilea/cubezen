@@ -1,0 +1,19 @@
+{
+  "name": "Cubezen — cozy blocky lofi",
+  "short_name": "Cubezen",
+  "description": "A cozy voxel valley to study in, with generative piano, rain, a campfire, a pomodoro timer and tasks.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "display_override": ["fullscreen", "standalone"],
+  "orientation": "any",
+  "background_color": "#0c0e22",
+  "theme_color": "#11101f",
+  "categories": ["productivity", "music", "education"],
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" },
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}

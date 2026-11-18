@@ -16,8 +16,19 @@ window.Ambience = (() => {
   const mtof = (m) => 440 * Math.pow(2, (m - 69) / 12);
   const clamp = (x, lo, hi) => Math.max(lo, Math.min(hi, x));
 
+  // When nothing can be heard (music paused, rain and fire at 0) the audio engine is suspended
+  // so the noise loops stop costing CPU; any sound wakes it up again.
+  let restTimer = null;
+  const silent = () => !playing && vol.rain < 0.005 && vol.fire < 0.005;
+  function rest(delay = 1500) {
+    if (!ctx) return;
+    clearTimeout(restTimer);
+    if (!silent()) { if (ctx.state === 'suspended') ctx.resume(); return; }
+    restTimer = setTimeout(() => { if (silent() && ctx.state === 'running') ctx.suspend(); }, delay);
+  }
+
   function init() {
-    if (ctx) { if (ctx.state === 'suspended') ctx.resume(); return; }
+    if (ctx) { if (ctx.state === 'suspended') ctx.resume(); rest(); return; }
     ctx = new (window.AudioContext || window.webkitAudioContext)();
 
     master = ctx.createGain();
@@ -37,10 +48,15 @@ window.Ambience = (() => {
     // Music bus → soft top-end → dry + large, dark hall reverb.
     musicBus = ctx.createGain();
     musicBus.gain.value = 0;                               // fades in to the slider value
+    // A little more body in the lows (+3 dB below ~150 Hz), like a piano recorded up close.
+    const warmth = ctx.createBiquadFilter();
+    warmth.type = 'lowshelf';
+    warmth.frequency.value = 150;
+    warmth.gain.value = 3;
     const soft = ctx.createBiquadFilter();
     soft.type = 'lowpass';
     soft.frequency.value = 6500;
-    musicBus.connect(soft);
+    musicBus.connect(warmth).connect(soft);
     const dry = ctx.createGain();
     dry.gain.value = 0.75;
     soft.connect(dry).connect(musicOut);
@@ -85,6 +101,7 @@ window.Ambience = (() => {
     crackle();
 
     for (const k of Object.keys(vol)) setVolume(k, vol[k]);
+    rest();
   }
 
   function impulse(seconds, decay) {
@@ -225,6 +242,34 @@ window.Ambience = (() => {
     }
   }
 
+  // Sub bass: a sine (with a touch of triangle so small speakers still hint at it) that swells
+  // in slowly, holds under the chord and fades, so it adds warmth without a thump or a beat.
+  function sub(midi, t, level, dur) {
+    const f = mtof(midi);
+    const peak = 0.075 * level;
+    const env = ctx.createGain();
+    env.gain.setValueAtTime(0, t);
+    env.gain.linearRampToValueAtTime(peak, t + 0.8);
+    env.gain.setValueAtTime(peak, t + Math.max(0.8, dur - 0.6));
+    env.gain.linearRampToValueAtTime(0, t + dur + 0.9);
+    const lp = ctx.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.frequency.value = 220;
+    lp.Q.value = 0.5;
+    lp.connect(env).connect(session.input);
+    const sine = ctx.createOscillator();
+    sine.frequency.value = f;
+    sine.connect(lp);
+    const tri = ctx.createOscillator();
+    tri.type = 'triangle';
+    tri.frequency.value = f;
+    const triGain = ctx.createGain();
+    triGain.gain.value = 0.25;
+    tri.connect(triGain).connect(lp);
+    launch(sine, t, t + dur + 1, true);
+    launch(tri, t, t + dur + 1, true);
+  }
+
   function startPiece(at) {
     piece = Composer.compose();
     queue = piece.events;
@@ -249,6 +294,7 @@ window.Ambience = (() => {
       if (at > horizon) break;
       const when = Math.max(at, ctx.currentTime + 0.01);
       if (e.kind === 'pad') pad(e.midi, when, e.v, e.dur);
+      else if (e.kind === 'sub') sub(e.midi, when, e.v, e.dur);
       else piano(e.midi, when, e.v, e.dur);
       qi++;
     }
@@ -282,6 +328,7 @@ window.Ambience = (() => {
       old.sources.forEach((s) => { try { s.stop(); } catch {} });
       old.input.disconnect();
     }, 300);
+    rest();
   }
 
   function setVolume(kind, value) {
@@ -289,12 +336,14 @@ window.Ambience = (() => {
     if (!ctx) return;
     const node = { music: musicBus, rain: rainGain, fire: fireGain }[kind];
     node.gain.setTargetAtTime(value * value * LEVEL[kind], ctx.currentTime, 0.03);
+    rest();
   }
 
   function chime() {
     init();
     const t = ctx.currentTime + 0.05;
     [72, 76, 79, 84].forEach((m, i) => piano(m, t + i * 0.18, 0.7, 3, master));
+    rest(6000);                                          // let the chime ring out first
   }
 
   return {
@@ -303,6 +352,7 @@ window.Ambience = (() => {
     pause,
     toggle() { playing ? pause() : play(); return playing; },
     get playing() { return playing; },
+    get state() { return ctx ? ctx.state : 'off'; },   // 'running' or 'suspended' once started
     setVolume,
     chime,
     onPiece(cb) { pieceListeners.push(cb); },

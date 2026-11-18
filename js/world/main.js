@@ -385,6 +385,14 @@ const state = {
   timeMode: 'clock', season: 'auto', rain: 0, fire: 0.35,
   t: 0.62, resolvedSeason: null,
 };
+// Start from the saved settings (written by app.js), so the first frame already shows the
+// chosen time, season, rain and fire instead of the defaults.
+try {
+  const world = JSON.parse(localStorage.getItem('cubezen.world'));
+  if (world?.v === 2) Object.assign(state, { timeMode: world.time, season: world.season });
+  const prefs = JSON.parse(localStorage.getItem('cubezen.prefs'));
+  if (prefs) Object.assign(state, { rain: prefs.rain ?? 0, fire: prefs.fire ?? 0.35 });
+} catch {}
 const FIXED_TIMES = { day: 0.45, sunset: 0.715, night: 0.92 };
 
 function seasonFromDate() {
@@ -678,7 +686,46 @@ function resize() {
 addEventListener('resize', resize);
 resize();
 
-let last = performance.now(), time = 0, acc = 0, fireTimer = 1, shadowTimer = 0, fireLevel = 0.35;
+let last = performance.now(), time = 0, acc = 0, fireTimer = 1, fireLevel = state.fire;
+
+// Shadows are only redrawn when the light has turned enough to show: about every half second
+// in Cycle mode, every minute or so in Clock mode and never at a fixed time of day. 0.003 rad
+// moves the shadow of a 10-block tree by 0.03 blocks, under a shadow-map texel.
+const shadowDir = new THREE.Vector3();
+function refreshShadows() {
+  const dir = sunLight.position.clone().sub(sunLight.target.position).normalize();
+  if (dir.angleTo(shadowDir) < 0.003) return;
+  shadowDir.copy(dir);
+  renderer.shadowMap.needsUpdate = true;
+}
+
+// Slow machines: if the first seconds can't hold ~22 fps, step down once or twice (smaller,
+// harder shadows, then a slightly lower render scale). Fast machines are never touched, and
+// nothing is stored, so a hiccup on one visit doesn't stick.
+const quality = { level: 0, warm: 4, samples: [] };
+function watchSpeed(step) {
+  if (quality.level >= 2 || params.has('shot')) return;
+  if (quality.warm > 0) { quality.warm -= step; return; }      // skip shader compiles and loading
+  quality.samples.push(step);
+  if (quality.samples.length < 60) return;
+  const median = quality.samples.sort((a, b) => a - b)[30];
+  quality.samples = [];
+  if (median < 1 / 22) { quality.level = 2; return; }           // fast enough: stop watching
+  quality.level++;
+  quality.warm = 2;
+  state.quality = quality.level;                               // visible in Scene.state for debugging
+  if (quality.level === 1) {
+    sunLight.shadow.mapSize.set(1024, 1024);
+    sunLight.shadow.map?.dispose();
+    sunLight.shadow.map = null;
+    renderer.shadowMap.type = THREE.PCFShadowMap;
+    scene.traverse((o) => { if (o.material) [].concat(o.material).forEach((m) => { m.needsUpdate = true; }); });
+    shadowDir.set(0, 0, 0);
+  } else {
+    renderer.setPixelRatio(PIXEL * 0.8);
+    resize();
+  }
+}
 const camOffset = new THREE.Vector3();
 
 function resolveTime(dt) {
@@ -687,7 +734,12 @@ function resolveTime(dt) {
   else state.t = FIXED_TIMES[state.timeMode];
 }
 
+// Background saving: while the page can't be seen (another tab, minimized, a covered window or
+// a locked screen) the world stops completely, with no frames, no shadows and no critters.
+// Music, rain and fire keep playing. It picks up where it was when the page comes back.
+let looping = false;
 function frame(now) {
+  if (document.hidden) { looping = false; return; }
   requestAnimationFrame(frame);
   const dt = Math.min(0.1, (now - last) / 1000);
   last = now;
@@ -735,8 +787,8 @@ function update(step) {
   critters.update(step, time, { night: k.night, rain: state.rain, season: s });
   props.update(step, time);
 
-  shadowTimer += step;
-  if (shadowTimer > 0.5) { shadowTimer = 0; renderer.shadowMap.needsUpdate = true; }
+  refreshShadows();
+  watchSpeed(step);
   renderer.setRenderTarget(rt);
   renderer.render(scene, camera);
   renderer.setRenderTarget(null);
@@ -756,7 +808,15 @@ if (params.get('critter')) {                    // e.g. ?critter=deer&advance=12
   for (let i = 0; i < Number(params.get('advance') || 0) * 10; i++) critters.update(0.1, i * 0.1, env);
 }
 update(1 / 30);
-requestAnimationFrame(frame);
+canvas.classList.add('ready');                   // fade in over the sky colour painted in index.html
+function startLoop() {
+  if (looping || document.hidden) return;
+  looping = true;
+  last = performance.now();
+  requestAnimationFrame(frame);
+}
+document.addEventListener('visibilitychange', startLoop);
+startLoop();
 
 window.Scene = {
   setRain(level) { state.rain = Math.max(0, Math.min(1, level)); },

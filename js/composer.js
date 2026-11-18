@@ -4,7 +4,7 @@
 // existing pieces.
 //
 // compose() returns { name, length, events }, where each event is
-// { t: seconds from piece start, midi, v: velocity 0–1, dur: seconds, kind: 'piano' | 'pad' }.
+// { t: seconds from piece start, midi, v: velocity 0–1, dur: seconds, kind: 'piano' | 'pad' | 'sub' }.
 globalThis.Composer = (() => {
   const r = Math.random;
   const pick = (arr) => arr[Math.floor(r() * arr.length)];
@@ -66,6 +66,7 @@ globalThis.Composer = (() => {
     const events = [];
 
     const add = (t, midi, v, dur, kind = 'piano') => {
+      if (kind === 'sub') return events.push({ t, midi, v, dur, kind });   // no dice: leaves the piece's randomness alone
       const jitter = kind === 'piano' ? (r() - 0.5) * 0.05 : 0;
       events.push({ t: Math.max(0, t + jitter), midi, v: Math.min(1, v * (0.9 + r() * 0.2)), dur, kind });
     };
@@ -133,6 +134,8 @@ globalThis.Composer = (() => {
       return t - start;
     }
 
+    const subNote = (bass) => (bass > 40 ? bass - 12 : bass);  // keep it between ~40 and 90 Hz
+
     let t = 0;
     for (let i = 0; i < chords; i++) {
       const section = i < 2 ? 'intro' : i >= chords - 2 ? 'outro' : i < chords / 2 ? 'A' : 'B';
@@ -164,6 +167,10 @@ globalThis.Composer = (() => {
       if (hasPad) {
         for (const m of [chord.bass + 12, chord.fifth + 12, chord.upper[0]]) add(t, m, 0.025, len + 1.5, 'pad');
       }
+      // A soft, sustained low note under the piano's bass, held through the chord: warmth
+      // only, it never plays anything the left hand doesn't. Uses no random numbers, so the
+      // pieces themselves come out exactly as before.
+      add(t, subNote(chord.bass), quiet ? 0.6 : 1, len + 0.3, 'sub');
 
       if ((section === 'A' && r() < 0.75) || (section === 'B' && r() < 0.9)) {
         const used = motif.offset + playPhrase(t + motif.offset * b, b, chord, section === 'B' ? 1.05 : 1) / b;
@@ -185,6 +192,7 @@ globalThis.Composer = (() => {
     fin.upper.forEach((m, j) => add(t + 0.2 + j * 0.16, m, 0.3, 9));
     if (r() < 0.6) add(t + 1.4, melodyMidi(nearestChordDegree(melodyK, fin)), 0.36, 8);
     if (hasPad) for (const m of [fin.bass + 12, fin.fifth + 12]) add(t, m, 0.025, 8, 'pad');
+    add(t, subNote(fin.bass), 0.7, 7, 'sub');
 
     events.sort((a, b) => a.t - b.t);
     return { name: makeName(), length: t + 9, events, mode: modeName, tonic, leftHand, hasPad };

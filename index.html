@@ -5,10 +5,28 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Cubezen — cozy blocky lofi</title>
   <meta name="description" content="Cozy blocky lofi for study & play. A pixel campfire, soft generative piano, rain and a pomodoro timer.">
+  <meta name="theme-color" content="#11101f">
   <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
   <link rel="preload" href="fonts/vt323.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="preload" href="fonts/press-start-2p.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="css/style.css">
+  <script>
+    // Until the 3D world draws its first frame (about a second), paint the sky of the chosen
+    // time of day, so a sunny Clock doesn't open on a night-blue screen.
+    (() => {
+      const SKY = [[0, '#0a0f2a', '#232a5e'], [0.23, '#2c3270', '#9c6a88'], [0.29, '#5a78c8', '#ffc29a'], [0.36, '#4a8de6', '#c2e2ff'],
+        [0.63, '#4a88e0', '#ffe2bc'], [0.7, '#7464c0', '#ffa688'], [0.75, '#3c3480', '#d4748e'], [0.79, '#171c4e', '#4b3f78']];
+      const q = new URLSearchParams(location.search);
+      let mode = q.get('time');
+      try { mode = mode || JSON.parse(localStorage.getItem('cubezen.world')).time; } catch {}
+      const now = new Date();
+      const t = q.get('t') ? Number(q.get('t')) : { day: 0.45, sunset: 0.715, night: 0.92 }[mode] ?? (now.getHours() + now.getMinutes() / 60) / 24;
+      const [, top, hor] = SKY.filter((k) => k[0] <= t).pop();
+      document.documentElement.style.setProperty('--sky', `linear-gradient(${top}, ${hor})`);
+    })();
+  </script>
 </head>
 <body>
   <canvas id="scene" aria-hidden="true"></canvas>
@@ -19,7 +37,26 @@
     <div class="panel menu" id="widget-menu" hidden></div>
     <button class="btn" id="btn-zen" title="Hide interface (H)">Zen</button>
     <button class="btn" id="btn-fs" title="Fullscreen (F)">Full</button>
+    <button class="btn" id="btn-help" aria-expanded="false" aria-controls="help" title="Keyboard shortcuts (?)">?</button>
   </div>
+
+  <div class="panel help" id="help" role="dialog" aria-label="Keyboard shortcuts" hidden>
+    <h2>Shortcuts</h2>
+    <dl>
+      <dt>Space</dt><dd>Play / pause music</dd>
+      <dt>M</dt><dd>Mute / unmute all sound</dd>
+      <dt>Z</dt><dd>Sleep timer (15 to 90 min)</dd>
+      <dt>S</dt><dd>Start / pause timer</dd>
+      <dt>R</dt><dd>Reset timer</dd>
+      <dt>N</dt><dd>Skip to the next phase</dd>
+      <dt>T</dt><dd>New task</dd>
+      <dt>H</dt><dd>Zen mode</dd>
+      <dt>F</dt><dd>Fullscreen</dd>
+      <dt>?</dt><dd>This help</dd>
+    </dl>
+  </div>
+
+  <div class="toast panel" id="toast" role="status" aria-live="polite" hidden></div>
 
   <div class="ui">
     <header class="brand" id="brand">
@@ -32,8 +69,30 @@
 
     <aside class="side">
       <section class="panel widget" id="pomodoro" aria-label="Pomodoro timer">
-        <div class="head"><h2>Timer <span class="peek" id="pomo-peek"></span></h2></div>
+        <div class="head">
+          <h2>Timer <span class="peek" id="pomo-peek"></span></h2>
+          <button class="gear" id="pomo-gear" aria-expanded="false" aria-controls="pomo-settings" aria-label="Timer settings" title="Timer settings">
+            <svg viewBox="0 0 8 8" shape-rendering="crispEdges" aria-hidden="true">
+              <rect x="0" y="1" width="8" height="1"/><rect x="5" y="0" width="2" height="3"/>
+              <rect x="0" y="6" width="8" height="1"/><rect x="1" y="5" width="2" height="3"/>
+            </svg>
+          </button>
+        </div>
         <div class="fold">
+          <div class="settings" id="pomo-settings" hidden>
+            <div class="presets">
+              <button class="tab" data-preset="25,5,15">25/5</button>
+              <button class="tab" data-preset="50,10,20">50/10</button>
+              <button class="tab" data-preset="90,20,30">90/20</button>
+            </div>
+            <div class="mins">
+              <label>Focus<input type="number" id="set-focus" min="1" max="180" inputmode="numeric"></label>
+              <label>Short<input type="number" id="set-short" min="1" max="60" inputmode="numeric"></label>
+              <label>Long<input type="number" id="set-long" min="1" max="90" inputmode="numeric"></label>
+            </div>
+            <label class="toggle"><input type="checkbox" id="set-auto"><span class="check"></span>Start the next phase on its own</label>
+            <label class="toggle"><input type="checkbox" id="set-notify"><span class="check"></span>Notify me when I'm in another window</label>
+          </div>
           <div class="tabs" role="tablist">
             <button class="tab active" data-mode="focus">Focus</button>
             <button class="tab" data-mode="short">Short</button>
@@ -77,6 +136,7 @@
             <button class="btn" aria-label="Add task">+</button>
           </form>
           <ul id="task-list"></ul>
+          <button class="link" id="task-clear" hidden></button>
         </div>
       </section>
     </aside>
@@ -93,7 +153,14 @@
         </svg>
       </button>
       <div class="now">
-        <span class="label">Now playing</span>
+        <span class="label">Now playing
+          <button class="sleep" id="btn-sleep" title="Sleep timer: fade out all sound (Z)" aria-label="Sleep timer off">
+            <svg viewBox="0 0 8 8" shape-rendering="crispEdges" aria-hidden="true">
+              <rect x="2" y="0" width="3" height="1"/><rect x="1" y="1" width="2" height="1"/><rect x="0" y="2" width="2" height="4"/>
+              <rect x="1" y="6" width="2" height="1"/><rect x="2" y="7" width="4" height="1"/><rect x="5" y="6" width="2" height="1"/>
+            </svg><span id="sleep-label">Sleep</span>
+          </button>
+        </span>
         <span id="track">Press play</span>
       </div>
       <div class="mixer fold">
@@ -107,9 +174,11 @@
   </div>
 
   <script type="importmap">{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js", "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/" } }</script>
-  <script type="module" src="js/world/main.js"></script>
+  <!-- The interface first: deferred and module scripts run in document order, so putting the
+       3D world last keeps the widgets from waiting for Three.js and the world generation. -->
   <script defer src="js/composer.js"></script>
   <script defer src="js/audio.js"></script>
   <script defer src="js/app.js"></script>
+  <script type="module" src="js/world/main.js"></script>
 </body>
 </html>

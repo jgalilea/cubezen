@@ -25,17 +25,18 @@ Preview overrides via URL: `?time=day|sunset|night|clock|cycle`, `?t=0.72` (0 = 
 Two independent halves talk through globals, so the UI still works if the 3D module fails to load:
 
 - **3D world** (`js/world/*.js`, ES modules, Three.js 0.160 via import map from jsdelivr in `index.html`). `main.js` is the entry point and exposes `window.Scene` (`setRain`, `setFire`, `setTimeMode`, `setSeason`, `state`). `app.js` falls back to a stub `Scene` if it's missing.
-- **Classic scripts** (`defer`, load order matters): `composer.js` → `globalThis.Composer`, `audio.js` → `window.Ambience`, `app.js` (UI wiring, localStorage keys `cubezen.prefs`, `cubezen.stats`, `cubezen.world`, `cubezen.tasks`, `cubezen.layout`).
+- **Classic scripts** (`defer`, load order matters): `composer.js` → `globalThis.Composer`, `audio.js` → `window.Ambience`, `app.js` (UI wiring, localStorage keys `cubezen.prefs`, `cubezen.stats`, `cubezen.world`, `cubezen.tasks`, `cubezen.layout`, `cubezen.timer` (running timer as its end time), `cubezen.pomo` (timer settings), `cubezen.sleep` (sleep timer end)).
+- **PWA**: `manifest.webmanifest` + `sw.js` (registered from `app.js` on https/localhost). Own files are network-first with a cache fallback, the Three.js CDN files cache-first. When adding a file the page loads (script, font, icon) or changing the Three.js version, add it to `SHELL`/`CDN` in `sw.js` and bump `VERSION`.
 
 World pipeline:
 - `build.js` `generateWorld()` fills a voxel grid (block ids in `B`) and exports shared layout (`ground()`, `riverX(z)`, `farm`, `dock`, `camp`, `mine`, `fences`, `bushes`) that `props.js` and `critters.js` use to place things. `buildFar()` continues `naturalHeight()` and the river past the map edge, so terrain changes show up in the background too. Changing terrain/river/cabin positions means checking those consumers and the camera (`CAM_POS`/`CAM_TARGET` in `main.js`).
 - `textures.js` paints a procedural 8×4 atlas of 16px tiles (indices in `T`) and repaints it per season from `SEASONS` palettes; new block faces need a tile index here plus mapping in `build.js`.
 - Meshes are built from the grid with face culling and baked ambient occlusion; plants/crops are separate cross-quad meshes rebuilt on season change. Props and critters are hand-built Three.js meshes with per-season visibility.
-- `main.js` drives lighting by interpolating keyframes `KEYS` over the day, renders at half resolution (`PIXEL=0.5`) with pixelated upscaling, caps at 30 fps and refreshes shadows every 0.5 s. Fire visuals follow the fire volume slider (`state.fire`, smoothed `fireLevel`).
+- `main.js` drives lighting by interpolating keyframes `KEYS` over the day, renders at half resolution (`PIXEL=0.5`) with pixelated upscaling, caps at 30 fps and redraws the shadow map only when the light direction has turned by more than 0.003 rad (`refreshShadows`) or the season changes, so anything that moves won't update its shadow. On slow machines `watchSpeed` steps quality down (1024 hard shadows, then 0.8× render scale; `Scene.state.quality`); never with `?shot`. The loop stops entirely while `document.hidden` (restarted on `visibilitychange`). Fire visuals follow the fire volume slider (`state.fire`, smoothed `fireLevel`).
 
 Audio pipeline:
 - `composer.js` is pure JS (no audio): `Composer.compose()` returns `{name, length, events}` for one piece (mode, progression, motif, sections).
-- `audio.js` synthesises piano/pad to perform those events, plus noise-based rain and fire, through a reverb and a soft limiter. Pause works by gating `musicOut` and stopping all sources registered for the current session; gains start at 0 to avoid a noise burst on init.
+- `audio.js` synthesises piano/pad/sub to perform those events (the `sub` events are a soft sustained low note under each chord, added without consuming random numbers; the music bus has a +3 dB low shelf at 150 Hz), plus noise-based rain and fire, through a reverb and a soft limiter. The AudioContext is suspended whenever nothing is audible (music paused, rain and fire at 0) and resumed by any sound (`rest()`). Pause works by gating `musicOut` and stopping all sources registered for the current session; gains start at 0 to avoid a noise burst on init.
 
 ## Conventions
 
