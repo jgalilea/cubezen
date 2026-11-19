@@ -129,8 +129,11 @@ export function createScene(root, params) {
   root.add(ground);
 
   // ---------- signs and the big screen ----------
-  const signAtlas = createSignAtlas(1024);
-  const signs = city.signs.filter((s) => (s.uv = paintSign(signAtlas, s)));
+  const signAtlas = createSignAtlas(2048);
+  // Packed tallest first so the shelves fill up evenly.
+  for (const s of [...city.signs].sort((a, b) => b.h - a.h)) s.uv = paintSign(signAtlas, s);
+  const signs = city.signs.filter((s) => s.uv);
+  if (signs.length < city.signs.length) console.warn('sign atlas full:', city.signs.length - signs.length, 'signs dropped');
   const signGeo = buildSignGeometry(signs);
   const signMat = new THREE.MeshBasicMaterial({ map: signAtlas.texture, vertexColors: true, toneMapped: false });
   const signMesh = new THREE.Mesh(signGeo, signMat);

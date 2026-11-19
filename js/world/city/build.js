@@ -125,7 +125,7 @@ export function generateCity() {
       for (let z = z0 + 1; z < z1; z += 3) light(faceX - s * 1.2, G + 1.2, z + 0.5, '#ffd8a8', 0.55);
     }
     // Awnings over some shopfronts.
-    if (b.shop === 'shop' && r() < 0.3) for (let z = z0 + 1; z < z1; z++) set(s > 0 ? 9 : -9, G + 2, z, B.awning, b.id);
+    b.awning = b.shop === 'shop' && r() < 0.3;
     // Vertical blade signs sticking out over the pavement, facing down the street.
     const blades = h > 9 ? (r() < 0.8 ? 1 : 0) + (w > 8 && r() < 0.4 ? 1 : 0) : 0;
     for (let i = 0; i < blades; i++) {
@@ -161,7 +161,7 @@ export function generateCity() {
 
   // The tower that closes the street, with a big screen, and taller towers behind it.
   const tower = (x0, x1, z0, z1, h, opts = {}) => {
-    const b = { id: nextId++, s: 1, tower: true, wall: opts.wall ?? B.wallB, lit: opts.lit ?? 0.45, fh: 4, winEvery: 1, neon: opts.neon ?? 0 };
+    const b = { id: nextId++, s: 1, tower: true, h, wall: opts.wall ?? B.wallB, lit: opts.lit ?? 0.45, fh: 4, winEvery: 1, neon: opts.neon ?? 0 };
     buildings.push(b);
     for (let y = 0; y < h; y++) for (let z = z0; z <= z1; z++) for (let x = x0; x <= x1; x++) {
       const front = z === z1, edgeL = x === x0, edgeR = x === x1;
@@ -233,25 +233,104 @@ export function generateCity() {
     light(vx + 0.5 - Math.sign(vx) * 1.2, G + 1, vz + 0.5, '#d0e4ff', 1.4);
   }
   const trees = [[6, -9], [-6, -16], [6, -26], [-6, -86], [6, -102], [-6, -126]];
-  // Trunks and planters are props (thin meshes); the canopy is voxels so it gets AO and neon
-  // light. It's a cluster of round clumps at different depths and heights, so the side facing
-  // the camera steps in and out instead of reading as one flat slab, and it leans over the road.
+  // Trunks and planters are props (thin meshes); the canopy is a cluster of round clumps at
+  // different depths and heights, so the side facing the camera steps in and out instead of
+  // reading as one flat slab, and it leans over the road. It's built from half-size cubes: the
+  // trees are right next to the camera, and full blocks read as clunky this close.
+  const canopy = [], C = 0.5;
   for (const [tx, tz] of trees) {
     const lean = -Math.sign(tx);
     const clumps = [[0, 5.2, 0, 1.9], [lean * 1.4, 4.7, 1.1, 1.5], [-lean * 0.8, 4.9, -1.2, 1.6], [lean * 0.5, 6.2, 0.3, 1.35], [-lean * 1.1, 4.3, 0.9, 1.15]];
-    for (let y = G + 2; y < G + 9; y++) for (let dz = -4; dz <= 4; dz++) for (let dx = -4; dx <= 4; dx++) {
-      const x = tx + dx, z = tz + dz, n = hash(x, y, z);
+    const cells = new Set(), key = (i, j, k) => (i + 64) * 65536 + (j + 64) * 256 + (k + 64);
+    for (let j = 0; j < 14; j++) for (let k = -9; k < 9; k++) for (let i = -9; i < 9; i++) {
+      const ox = (i + 0.5) * C, oy = 2 + (j + 0.5) * C, oz = (k + 0.5) * C;
+      const n = hash(tx * 2 + i, j, tz * 2 + k);
       let inside = false;
       for (const [cx, cy, cz, cr] of clumps) {
-        const ex = dx - cx, ey = (y + 0.5 - G - cy) * 1.15, ez = dz - cz;
+        const ex = ox - cx, ey = (oy - cy) * 1.15, ez = oz - cz;
         const e = (ex * ex + ey * ey + ez * ez) / (cr * cr);
-        if (e < 0.6 || (e < 1 && n < 0.75)) { inside = true; break; }
+        if (e < 0.62 || (e < 1 && n < 0.7)) { inside = true; break; }
       }
-      if (inside && get(x, y, z) === B.AIR) set(x, y, z, B.leaves);
+      if (inside && get(Math.floor(tx + 0.5 + ox), Math.floor(G + oy), Math.floor(tz + 0.5 + oz)) === B.AIR) cells.add(key(i, j, k));
+    }
+    for (const c of cells) {
+      const i = Math.floor(c / 65536) - 64, j = Math.floor(c / 256) % 256 - 64, k = c % 256 - 64;
+      // Faces against another leaf cube are hidden (order of FACES: +x -x +z -z +y -y).
+      const hide = [[1, 0, 0], [-1, 0, 0], [0, 0, 1], [0, 0, -1], [0, 1, 0], [0, -1, 0]]
+        .reduce((m, [a, b2, d], f) => m | (cells.has(key(i + a, j + b2, k + d)) ? 1 << f : 0), 0);
+      if (hide === 63) continue;
+      const x = tx + 0.5 + i * C, y = G + 2 + j * C, z = tz + 0.5 + k * C;
+      const shade = (0.82 + hash(i, j * 7, k) * 0.3) * (0.8 + j * C * 0.06);
+      canopy.push({ x0: x, x1: x + C, y0: y, y1: y + C, z0: z, z1: z + C, tile: T.leaves, tint: -1, shade, hide, leaf: true });
     }
   }
 
-  return { get, grid, tint, inside, signs, lights, buildings, vending, screen, trees, X0, X1, Z0, Z1, H };
+  const details = decorate(buildings, get, signs).concat(canopy);
+  return { get, grid, tint, inside, signs, lights, buildings, vending, screen, trees, details, X0, X1, Z0, Z1, H };
+}
+
+// ---------- facade relief ----------
+// Thin boxes that break up the flat voxel walls of the street: cornices, sills, window hoods,
+// balconies with railings, air conditioners, drain pipes and awnings. They are finer than a
+// block, so they read at the scale of the valley's detail even this close to the camera. A
+// separate random stream keeps the city's layout the same.
+const WINDOWS = new Set(['winWarm', 'winCool', 'winPink', 'winDark'].map((k) => B[k]));
+function decorate(buildings, get, signs) {
+  const r = rng(4242), out = [];
+  const near = (b) => b.z1 > -150;
+  for (const b of buildings) {
+    if (b.tower || !b.masses || !near(b)) continue;
+    const s = b.s, dir = -s;
+    // A box on the street face: u along the facade (z), y up, `d0..d1` out from the wall.
+    const box = (m, za, zb, ya, yb, d0, d1, tile, shade = 1) => {
+      const fx = s > 0 ? m.xf : m.xf + 1;
+      const xa = fx + dir * d0, xb = fx + dir * d1;
+      out.push({ x0: Math.min(xa, xb), x1: Math.max(xa, xb), y0: ya, y1: yb, z0: za, z1: zb, tile, tint: b.id, shade });
+    };
+    const style = {
+      cornice: r() < 0.6, sills: r() < 0.75, hoods: r() < 0.35, balcony: b.fh >= 3 && r() < 0.3,
+      ac: 0.08 + r() * 0.16, pipe: r() < 0.65,
+    };
+    const wallTile = b.wall - 1;
+    b.masses.forEach((m, mi) => {
+      const free = (ry, z) => get(m.xf - s, G + ry, z) === B.AIR;
+      const win = (ry, z) => WINDOWS.has(get(m.xf, G + ry, z));
+      const len = m.z1 - m.z0 + 1;
+      // The coping along the top and, on the ground mass, the cornice over the shop signs.
+      box(m, m.z0, m.z1 + 1, G + m.top - 0.18, G + m.top + 0.08, -0.02, 0.16, wallTile, 0.9);
+      if (mi === 0 && m.top > 5) box(m, m.z0, m.z1 + 1, G + 4, G + 4.22, 0, 0.32, wallTile, 0.85);
+      if (style.pipe && m.top > 6) {
+        const pz = r() < 0.5 ? m.z0 + 0.12 : m.z1 + 0.7;
+        box(m, pz, pz + 0.18, G + (mi ? m.y0 : 0), G + m.top - 0.2, 0.04, 0.22, T.planter, 0.8);
+      }
+      for (let ry = Math.max(4, m.y0); ry < m.top - 1; ry++) {
+        const fy = (ry - 4) % b.fh;
+        if (style.cornice && fy === b.fh - 1 && ry + 1 < m.top - 1) box(m, m.z0, m.z1 + 1, G + ry + 0.82, G + ry + 1, 0, 0.2, wallTile, 0.85);
+        for (let z = m.z0; z <= m.z1; z++) {
+          if (!free(ry, z)) continue;
+          if (win(ry, z)) {
+            const bottom = !win(ry - 1, z), top = !win(ry + 1, z);
+            if (bottom && style.balcony) {
+              box(m, z, z + 1, G + ry - 0.1, G + ry + 0.02, 0, 0.78, T.roof, 0.85);
+              box(m, z, z + 1, G + ry + 0.02, G + ry + 0.6, 0.74, 0.78, T.railing);
+              if (!win(ry, z - 1)) box(m, z, z + 0.04, G + ry + 0.02, G + ry + 0.6, 0, 0.78, T.railing);
+              if (!win(ry, z + 1)) box(m, z + 0.96, z + 1, G + ry + 0.02, G + ry + 0.6, 0, 0.78, T.railing);
+              if (r() < 0.25) box(m, z + 0.15, z + 0.45, G + ry + 0.02, G + ry + 0.3, 0.3, 0.6, T.leaves);   // a potted plant
+            } else if (bottom && style.sills) box(m, z + 0.06, z + 0.94, G + ry - 0.06, G + ry + 0.06, 0, 0.16, T.planter, 0.95);
+            if (top && style.hoods) box(m, z + 0.02, z + 0.98, G + ry + 0.9, G + ry + 0.98, 0, 0.24, T.metal, 0.8);
+          } else if (fy < b.fh - 1 && r() < style.ac && (win(ry, z - 1) || win(ry, z + 1)) && z > m.z0 && z < m.z1) {
+            const zc = z + 0.5 + (r() - 0.5) * 0.2;
+            box(m, zc - 0.36, zc + 0.36, G + ry + 0.06, G + ry + 0.58, 0, 0.34, T.aircon);
+          }
+        }
+      }
+      // Ground floor: an awning over the shopfront, a little fascia lip under the sign.
+      if (mi === 0 && b.awning) box(m, m.z0 + 1, m.z1, G + 2.62, G + 2.74, 0, 1.1, T.awning);
+      if (mi === 0 && b.awning) box(m, m.z0 + 1, m.z1, G + 2.32, G + 2.62, 1.06, 1.12, T.awning, 0.9);
+      if (mi === 0 && b.shop === 'shop' && len >= 4) box(m, m.z0 + 0.5, m.z1 + 0.5, G + 2.94, G + 3.02, 0, 0.1, T.metal, 0.7);
+    });
+  }
+  return out;
 }
 
 // ---------- meshing ----------
@@ -345,6 +424,34 @@ export function buildCityMeshes(city) {
       o.uv.push(u0, v0, u1, v0, u1, v1, u0, v1);
       if (aos[0] + aos[2] < aos[1] + aos[3]) o.index.push(base + 1, base + 2, base + 3, base + 1, base + 3, base);
       else o.index.push(base, base + 1, base + 2, base, base + 2, base + 3);
+    }
+  }
+  // Facade relief: each face takes the part of its tile that matches its size, so the texture
+  // keeps the same pixel size as the blocks around it.
+  for (const d of city.details) {
+    const lo = [d.x0, d.y0, d.z0], hi = [d.x1, d.y1, d.z1];
+    const [u0, v0, u1, v1] = tileUV(d.tile);
+    const t = tints[d.tint] ?? [1, 1, 1];
+    const o = out.blocks;
+    for (const [fi, f] of FACES.entries()) {
+      if (d.hide & (1 << fi)) continue;
+      const p = f.c.map((c) => [0, 1, 2].map((i) => (c[i] ? hi[i] : lo[i])));
+      const mid = [0, 1, 2].map((i) => (p[0][i] + p[2][i]) / 2 - [CAM.x, CAM.y, CAM.z][i]);
+      if (f.n[1] !== 1 && f.n[0] * mid[0] + f.n[1] * mid[1] + f.n[2] * mid[2] > 0) continue;
+      const span = (a, b) => Math.hypot(b[0] - a[0], b[1] - a[1], b[2] - a[2]);
+      const w = Math.min(1, span(p[0], p[1])), h = Math.min(1, span(p[1], p[2]));
+      const k = (d.leaf ? (f.n[1] > 0 ? 1.2 : f.n[1] < 0 ? 0.55 : f.n[0] ? 0.78 : 0.95) : (f.n[1] < 0 ? 0.62 : f.n[1] > 0 ? 1.05 : 1)) * d.shade;
+      const base = o.pos.length / 3;
+      for (const q of p) {
+        o.pos.push(q[0], q[1], q[2]);
+        o.nor.push(...f.n);
+        o.col.push(t[0] * k, t[1] * k, t[2] * k);
+        field(q[0], q[1], q[2], f.n, tmp);
+        o.neon.push(tmp[0], tmp[1], tmp[2]);
+      }
+      const du = (u1 - u0) * w, dv = (v1 - v0) * h;
+      o.uv.push(u0, v1 - dv, u0 + du, v1 - dv, u0 + du, v1, u0, v1);
+      o.index.push(base, base + 1, base + 2, base, base + 2, base + 3);
     }
   }
   const geo = (o) => {

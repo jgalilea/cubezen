@@ -17,11 +17,29 @@ const FONT = {
   '!': '010010010000010', "'": '010010000000000', '+': '000010111010000', '*': '000101010101000',
 };
 export function textWidth(text, s) { return text.length * 4 * s - s; }
-function drawText(g, text, x, y, s, color) {
+// Fills the set cells of a w-wide bitmap at scale s. With `core`, a thinner light line runs down
+// the middle of the strokes (joined across neighbouring cells), so neon letters read as tubes.
+function drawBits(g, bits, w, n, x, y, s, color, core) {
+  const on = (i, j) => i >= 0 && i < w && j >= 0 && j < n / w && (bits[j * w + i] === 1 || bits[j * w + i] === '1');
   g.fillStyle = color;
+  for (let k = 0; k < n; k++) if (on(k % w, Math.floor(k / w))) g.fillRect(x + (k % w) * s, y + Math.floor(k / w) * s, s, s);
+  if (!core || s < 3) return;
+  const t = Math.max(1, Math.floor(s / 3)), o = Math.floor((s - t) / 2);
+  g.fillStyle = core;
+  for (let k = 0; k < n; k++) {
+    const i = k % w, j = Math.floor(k / w);
+    if (!on(i, j)) continue;
+    const cx = x + i * s + o, cy = y + j * s + o;
+    g.fillRect(cx, cy, t, t);
+    if (on(i + 1, j)) g.fillRect(cx, cy, s, t);
+    if (on(i, j + 1)) g.fillRect(cx, cy, t, s);
+    if (on(i + 1, j + 1) && !on(i + 1, j) && !on(i, j + 1)) for (let d = 0; d < s; d++) g.fillRect(cx + d, cy + d, t, t);
+    if (on(i - 1, j + 1) && !on(i - 1, j) && !on(i, j + 1)) for (let d = 0; d < s; d++) g.fillRect(cx - d, cy + d, t, t);
+  }
+}
+function drawText(g, text, x, y, s, color, core) {
   for (const ch of text.toUpperCase()) {
-    const bits = FONT[ch] ?? FONT[' '];
-    for (let i = 0; i < 15; i++) if (bits[i] === '1') g.fillRect(x + (i % 3) * s, y + Math.floor(i / 3) * s, s, s);
+    drawBits(g, FONT[ch] ?? FONT[' '], 3, 15, x, y, s, color, core);
     x += 4 * s;
   }
 }
@@ -48,10 +66,8 @@ const GLYPHS = (() => {
   }
   return out;
 })();
-function drawGlyph(g, idx, x, y, s, color) {
-  const bits = GLYPHS[idx % GLYPHS.length];
-  g.fillStyle = color;
-  for (let i = 0; i < 49; i++) if (bits[i]) g.fillRect(x + (i % 7) * s, y + Math.floor(i / 7) * s, s, s);
+function drawGlyph(g, idx, x, y, s, color, core) {
+  drawBits(g, GLYPHS[idx % GLYPHS.length], 7, 49, x, y, s, color, core);
 }
 
 export const NEON = ['#ff3fa4', '#e040ff', '#2ee6ff', '#4a7bff', '#ff3b3b', '#ff9a2e', '#ffe23a', '#3dff8a', '#f4f4ff'];
@@ -67,7 +83,7 @@ export const NAMES = [
 ];
 
 // ---------- the atlas ----------
-export function createSignAtlas(size = 1024) {
+export function createSignAtlas(size = 2048) {
   const canvas = document.createElement('canvas');
   canvas.width = canvas.height = size;
   const g = canvas.getContext('2d');
@@ -91,20 +107,20 @@ export function createSignAtlas(size = 1024) {
 // Paints one sign into the atlas and returns its UV rect, or null when the atlas is full.
 // spec: { kind: blade|stack|board|roof, w, h (in blocks), color, style: neon|panel, text, seed }
 export function paintSign(atlas, spec) {
-  const PX = 16;
+  const PX = 32;                                    // texels per block: twice the old density, finer strokes
   const W = Math.round(spec.w * PX), H = Math.round(spec.h * PX);
   const rc = atlas.alloc(W, H);
   if (!rc) return null;
   const g = atlas.g, r = rng(spec.seed);
   const { x, y } = rc;
   const main = spec.color;
-  const border = (col) => { g.fillStyle = col; g.fillRect(x, y, W, 1); g.fillRect(x, y + H - 1, W, 1); g.fillRect(x, y, 1, H); g.fillRect(x + W - 1, y, 1, H); };
+  const border = (col, t = 2) => { g.fillStyle = col; g.fillRect(x, y, W, t); g.fillRect(x, y + H - t, W, t); g.fillRect(x, y, t, H); g.fillRect(x + W - t, y, t, H); };
   const bg = (col) => { g.fillStyle = col; g.fillRect(x, y, W, H); };
-  const glyphCol = (x0, y0, x1, y1, fg, s) => {     // a column of glyphs centred in a box
-    const gw = 7 * s, pitch = 7 * s + Math.max(2, s + 1);
+  const glyphCol = (x0, y0, x1, y1, fg, s, core) => {     // a column of glyphs centred in a box
+    const gw = 7 * s, pitch = 7 * s + Math.max(2, s + 2);
     const n = Math.max(1, Math.floor((y1 - y0 - 2) / pitch));
     const top = y0 + Math.floor((y1 - y0 - n * pitch + (pitch - gw)) / 2);
-    for (let i = 0; i < n; i++) drawGlyph(g, Math.floor(r() * 64), x0 + Math.floor((x1 - x0 - gw) / 2), top + i * pitch, s, fg);
+    for (let i = 0; i < n; i++) drawGlyph(g, Math.floor(r() * 64), x0 + Math.floor((x1 - x0 - gw) / 2), top + i * pitch, s, fg, core);
   };
 
   if (spec.kind === 'stack') {
@@ -116,9 +132,11 @@ export function paintSign(atlas, spec) {
       g.fillStyle = col;
       g.fillRect(x, cy, W, ph);
       const fg = col === '#ffe23a' || col === '#f4f4ff' ? dark : '#ffffff';
-      glyphCol(x, cy, x + W, cy + ph, fg, W >= 18 ? 2 : 1);
+      glyphCol(x, cy, x + W, cy + ph, fg, W >= 36 ? 3 : 2);
       g.fillStyle = dark;
-      g.fillRect(x, cy + ph - 1, W, 1);
+      g.fillRect(x, cy + ph - 2, W, 2);
+      g.fillStyle = 'rgba(255,255,255,0.25)';
+      g.fillRect(x + 2, cy, W - 4, 1);
       cy += ph;
     }
     border('#2a2030');
@@ -126,36 +144,39 @@ export function paintSign(atlas, spec) {
     if (spec.style === 'panel') {
       bg(main);
       const fg = main === '#ffe23a' || main === '#f4f4ff' ? dark : '#ffffff';
-      glyphCol(x, y + 2, x + W, y + H - 2, fg, 2);
+      glyphCol(x, y + 4, x + W, y + H - 4, fg, 3);
       border(dark);
     } else {
       bg(dark);
-      glyphCol(x, y + 2, x + W, y + H - 2, main, 2);
+      glyphCol(x, y + 4, x + W, y + H - 4, main, 3, '#ffffff');
       border(main);
+      g.fillStyle = dark;
+      g.fillRect(x + 2, y + 2, W - 4, 1);
     }
   } else {
     // board (shop sign) or roof: a latin name, as big as fits, maybe with a row of glyphs.
     const text = spec.text;
-    let s = 4;
-    while (s > 1 && (textWidth(text, s) > W - 6 || 5 * s > H - 4)) s--;
+    let s = 7;
+    while (s > 1 && (textWidth(text, s) > W - 12 || 5 * s > H - 10)) s--;
     const tw = textWidth(text, s), th = 5 * s;
     const panel = spec.style === 'panel';
     bg(panel ? main : dark);
     const fg = panel ? (main === '#ffe23a' || main === '#f4f4ff' ? dark : '#ffffff') : main;
     const tx = x + Math.floor((W - tw) / 2), ty = y + Math.floor((H - th) / 2);
     if (!panel) {                                         // a soft halo behind neon letters
-      g.globalAlpha = 0.35;
-      for (const [dx, dy] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) drawText(g, text, tx + dx, ty + dy, s, main);
+      g.globalAlpha = 0.3;
+      for (const [dx, dy] of [[-2, 0], [2, 0], [0, -2], [0, 2]]) drawText(g, text, tx + dx, ty + dy, s, main);
       g.globalAlpha = 1;
-      drawText(g, text, tx, ty, s, '#ffffff');
-      g.globalAlpha = 0.55;
-      drawText(g, text, tx, ty, s, main);
-      g.globalAlpha = 1;
-    } else drawText(g, text, tx, ty, s, fg);
+      drawText(g, text, tx, ty, s, main, '#ffffff');
+    } else {
+      drawText(g, text, tx + 1, ty + 1, s, 'rgba(0,0,0,0.25)');           // a printed panel: a soft drop shadow
+      drawText(g, text, tx, ty, s, fg);
+    }
     // Little glyphs either side of the name when there's room.
     const room = Math.floor((W - tw) / 2) - 4;
-    if (room >= 9 && H >= 11) {
-      for (const gx of [x + 2, x + W - 2 - 7]) drawGlyph(g, Math.floor(r() * 64), gx, y + Math.floor((H - 7) / 2), 1, fg);
+    const gs = Math.max(1, Math.min(3, Math.floor((H - 10) / 7)));
+    if (room >= 7 * gs + 4 && H >= 7 * gs + 6) {
+      for (const gx of [x + 5, x + W - 5 - 7 * gs]) drawGlyph(g, Math.floor(r() * 64), gx, y + Math.floor((H - 7 * gs) / 2), gs, fg);
     }
     border(panel ? dark : main);
   }
