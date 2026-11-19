@@ -4,6 +4,7 @@
 import * as THREE from 'three';
 import { makeBox, pixelTexture } from '../common.js';
 import { G, CROSS } from './build.js';
+import { kit, PAT } from './kit.js';
 
 export const YATAI = { x: -7.6, z: 2.5 };
 
@@ -95,54 +96,124 @@ export function createProps(root, city, addGlow, traffic) {
 
   // ---------- the yakitori stall ----------
   const Y = YATAI;
-  const wood = new THREE.MeshLambertMaterial({ color: 0x7a4a2a }), woodLight = new THREE.MeshLambertMaterial({ color: 0xa8784a });
-  const roofMat = new THREE.MeshLambertMaterial({ color: 0x6a2a24 });
-  box(2.0, 1.0, 3.2, wood, Y.x, G + 0.55, Y.z);
-  box(2.3, 0.1, 3.5, woodLight, Y.x, G + 1.1, Y.z);
-  for (const dz of [-1.25, 1.25]) box(0.12, 0.6, 0.6, darkMat, Y.x - 1.05, G + 0.3, Y.z + dz);    // wheels
-  for (const [dx, dz] of [[-0.95, -1.55], [-0.95, 1.55], [0.95, -1.55], [0.95, 1.55]]) box(0.1, 1.5, 0.1, wood, Y.x + dx, G + 1.85, Y.z + dz);
-  box(2.7, 0.14, 3.8, roofMat, Y.x, G + 2.65, Y.z);
-  box(2.4, 0.3, 3.5, roofMat, Y.x, G + 2.85, Y.z);
-  for (const dz of [-1, 0, 1]) box(0.45, 0.5, 0.45, darkMat, Y.x + 1.7, G + 0.25, Y.z + dz * 1.1);           // stools
-  // Noren: the split cloth hanging from the roof on the street side.
+  // The cart is open at the back, where the cook stands; customers sit on the street side.
+  const yk = kit();
+  const WOOD = '#7a4a2a', WOOD_L = '#a8784a', WOOD_D = '#4a2c1a', W = { pat: PAT.wood };
+  yk.box(0.95, 0.9, 3.2, WOOD, Y.x + 0.52, G + 0.55, Y.z, W)                      // the counter block
+    .box(0.1, 0.75, 3.2, WOOD, Y.x - 0.95, G + 0.5, Y.z, W)                       // back panel, low
+    .box(1.9, 0.9, 0.1, WOOD, Y.x, G + 0.55, Y.z + 1.55, W)                       // ends
+    .box(1.9, 0.9, 0.1, WOOD, Y.x, G + 0.55, Y.z - 1.55, W)
+    .box(2.0, 0.08, 3.3, WOOD_D, Y.x, G + 0.12, Y.z, W)                           // floor
+    .box(1.3, 0.08, 3.5, WOOD_L, Y.x + 0.62, G + 1.04, Y.z, W)                    // counter top
+    .box(0.06, 0.12, 3.5, WOOD_D, Y.x + 1.28, G + 0.98, Y.z)                      // its lip
+    .box(0.5, 0.05, 3.1, WOOD_L, Y.x - 0.7, G + 0.85, Y.z, W);                    // the cook's shelf
+  for (const dz of [-1.5, -0.5, 0.5, 1.5]) yk.box(0.08, 0.9, 0.08, WOOD_D, Y.x + 1.01, G + 0.55, Y.z + dz);   // frame on the front
+  for (const dy of [0.22, 0.92]) yk.box(0.06, 0.06, 3.2, WOOD_D, Y.x + 1.01, G + dy, Y.z);
+  for (const dx of [-0.6, 0.3]) yk.box(0.06, 0.9, 0.06, WOOD_D, Y.x + dx, G + 0.55, Y.z + 1.61);
+  // Big spoked wheels on the back.
+  for (const dz of [-1.0, 1.0]) {
+    const wx = Y.x - 1.07, wy = G + 0.4, wz = Y.z + dz;
+    for (let i = 0; i < 8; i++) {
+      const a = (i / 8) * Math.PI * 2;
+      yk.box(0.1, 0.06, 0.32, WOOD_D, wx, wy + Math.sin(a) * 0.36, wz + Math.cos(a) * 0.36, { rx: -a });   // rim
+    }
+    for (let i = 0; i < 4; i++) yk.box(0.05, 0.7, 0.05, WOOD, wx, wy, wz, { rx: (i / 4) * Math.PI });       // spokes
+    yk.box(0.14, 0.14, 0.14, '#2a2420', wx, wy, wz);
+  }
+  for (const [dx, dz] of [[-0.95, -1.55], [-0.95, 1.55], [0.95, -1.55], [0.95, 1.55]]) yk.box(0.1, 1.5, 0.1, WOOD, Y.x + dx, G + 1.85, Y.z + dz, W);
+  // A pitched roof of corrugated sheet on rafters, with boards along the eaves.
+  const ROOF = '#7a2e26';
+  for (const s of [-1, 1]) yk.box(1.5, 0.06, 3.9, ROOF, Y.x + s * 0.68, G + 2.72, Y.z, { pat: PAT.ribbed, rz: -s * 0.18 });
+  yk.box(0.14, 0.12, 3.95, '#5a1e1a', Y.x, G + 2.86, Y.z)                         // ridge
+    .box(0.06, 0.24, 3.9, WOOD_D, Y.x + 1.4, G + 2.52, Y.z, W)                    // eave boards
+    .box(0.06, 0.24, 3.9, WOOD_D, Y.x - 1.4, G + 2.52, Y.z, W)
+    .box(2.6, 0.1, 0.08, WOOD_D, Y.x, G + 2.58, Y.z + 1.9);
+  // On the counter: bottles, cups, a tray of skewers waiting for the grill.
+  for (const [dz, c] of [[-1.35, '#2a5a3a'], [-1.2, '#5a3a1a'], [-1.05, '#e8e4dc']]) {
+    yk.box(0.12, 0.34, 0.12, c, Y.x + 0.95, G + 1.25, Y.z + dz).box(0.05, 0.1, 0.05, c, Y.x + 0.95, G + 1.47, Y.z + dz).box(0.08, 0.08, 0.125, '#f4f0e0', Y.x + 0.95, G + 1.24, Y.z + dz);
+  }
+  for (const dz of [0.95, 1.25]) yk.box(0.1, 0.12, 0.1, '#f4f4f0', Y.x + 1.05, G + 1.14, Y.z + dz).box(0.07, 0.02, 0.07, '#e8c060', Y.x + 1.05, G + 1.19, Y.z + dz);
+  yk.box(0.3, 0.03, 0.5, '#e8e4dc', Y.x - 0.7, G + 0.89, Y.z + 0.9);
+  for (let i = 0; i < 5; i++) yk.box(0.26, 0.04, 0.05, '#c87a4a', Y.x - 0.7, G + 0.92, Y.z + 0.72 + i * 0.09);
+  // The grill: a charcoal box with a grate on top.
+  yk.box(0.5, 0.22, 1.2, '#2a2a30', Y.x + 0.25, G + 1.19, Y.z, { pat: PAT.metal })
+    .box(0.46, 0.02, 1.16, '#4a4a52', Y.x + 0.25, G + 1.31, Y.z, { pat: PAT.grille, ry: Math.PI / 2 });
+  // Stools for the customers, crates of empties, and a chalk board on the pavement.
+  for (const dz of [-1, 0, 1]) {
+    const sx = Y.x + 1.75, sz = Y.z + dz * 1.1;
+    yk.box(0.4, 0.07, 0.4, '#b82a2a', sx, G + 0.56, sz, { pat: PAT.fabric }).box(0.42, 0.04, 0.42, '#3a3a42', sx, G + 0.51, sz);
+    for (const [lx, lz] of [[-0.15, -0.15], [0.15, -0.15], [-0.15, 0.15], [0.15, 0.15]]) yk.box(0.04, 0.5, 0.04, '#5a5a64', sx + lx, G + 0.25, sz + lz);
+  }
+  for (const [dy, c] of [[0.17, '#e8c43a'], [0.5, '#c83a3a']]) {
+    yk.box(0.5, 0.32, 0.4, c, Y.x - 0.6, G + dy, Y.z - 2.05, { pat: PAT.grille });
+    for (const dx of [-0.12, 0, 0.12]) yk.box(0.07, 0.04, 0.07, '#5a3a1a', Y.x - 0.6 + dx, G + dy + 0.17, Y.z - 2.05);
+  }
+  {                                                                               // an A-frame menu board
+    const bx = Y.x + 1.7, bz = Y.z + 2.35;
+    yk.box(0.56, 0.86, 0.04, WOOD, bx, G + 0.45, bz - 0.03, { rx: -0.2, pat: PAT.wood })
+      .box(0.48, 0.76, 0.03, '#1e2a24', bx, G + 0.45, bz, { rx: -0.2 })
+      .box(0.56, 0.86, 0.04, WOOD, bx, G + 0.45, bz - 0.36, { rx: 0.2, pat: PAT.wood });
+    for (let i = 0; i < 5; i++) yk.box(0.32 - (i % 2) * 0.12, 0.025, 0.02, i ? '#e8e4dc' : '#ffb84a', bx - (i % 2) * 0.06, G + 0.72 - i * 0.12, bz + 0.02 + i * 0.024, { rx: -0.2 });
+  }
+  const stall = yk.mesh();
+  stall.castShadow = stall.receiveShadow = true;
+  root.add(stall);
+  // Noren: the split cloth hanging from the roof on the street side, with an invented crest.
   const norenCanvas = document.createElement('canvas');
-  norenCanvas.width = 48; norenCanvas.height = 12;
+  norenCanvas.width = 108; norenCanvas.height = 20;
   {
     const g = norenCanvas.getContext('2d');
-    g.fillStyle = '#2a2a5a'; g.fillRect(0, 0, 48, 12);
-    g.fillStyle = '#f4f0e8';
-    for (let i = 0; i < 3; i++) { g.fillRect(i * 16 + 6, 3, 4, 1); g.fillRect(i * 16 + 7, 3, 2, 6); g.fillRect(i * 16 + 5, 6, 6, 1); }
-    g.fillStyle = '#1a1a3a';
-    for (const x of [15, 31]) g.fillRect(x, 4, 2, 8);
+    g.fillStyle = '#2a2a5a'; g.fillRect(0, 0, 108, 20);
+    g.fillStyle = '#3a3a72'; for (let x = 0; x < 108; x += 3) g.fillRect(x, 0, 1, 20);
+    g.fillStyle = '#1a1a3a'; g.fillRect(0, 0, 108, 2);
+    for (let i = 0; i < 3; i++) {
+      const cx = i * 36 + 17, cy = 10;
+      g.fillStyle = '#f4f0e8';
+      for (let y = -5; y <= 5; y++) for (let x = -5; x <= 5; x++) { const d = Math.hypot(x, y); if (d <= 5.2 && d > 3.6) g.fillRect(cx + x, cy + y, 1, 1); }
+      g.fillRect(cx - 2, cy - 1, 5, 1); g.fillRect(cx, cy - 3, 1, 6); g.fillRect(cx - 2, cy + 2, 5, 1);
+    }
+    g.fillStyle = '#0e0e20';
+    for (const x of [35, 71]) g.fillRect(x, 5, 2, 15);
   }
-  const noren = new THREE.Mesh(new THREE.PlaneGeometry(3.4, 0.6), new THREE.MeshLambertMaterial({ map: pixelTexture(norenCanvas), side: THREE.DoubleSide }));
-  noren.position.set(Y.x + 1.33, G + 2.3, Y.z);
+  const noren = new THREE.Mesh(new THREE.PlaneGeometry(3.4, 0.62), new THREE.MeshLambertMaterial({ map: pixelTexture(norenCanvas), side: THREE.DoubleSide }));
+  noren.position.set(Y.x + 1.38, G + 2.1, Y.z);
   noren.rotation.y = Math.PI / 2;
   root.add(noren);
   // Red paper lanterns.
   const lanternMat = new THREE.MeshBasicMaterial({ color: 0xff5a3a });
   const lanterns = [];
-  for (const dz of [-1.5, 1.5]) {
-    const lx = Y.x + 1.25, lz = Y.z + dz;
-    box(0.42, 0.55, 0.42, lanternMat, lx, G + 2.15, lz).castShadow = false;
-    box(0.46, 0.06, 0.46, darkMat, lx, G + 2.45, lz);
-    box(0.46, 0.06, 0.46, darkMat, lx, G + 1.86, lz);
+  const lk = kit();
+  for (const dz of [-1.82, 1.82]) {
+    const lx = Y.x + 1.3, lz = Y.z + dz;
+    const lantern = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, 0.5, 8), lanternMat);
+    lantern.position.set(lx, G + 2.15, lz);
+    root.add(lantern);
+    lk.box(0.32, 0.06, 0.32, '#1a1418', lx, G + 2.42, lz).box(0.32, 0.06, 0.32, '#1a1418', lx, G + 1.88, lz)
+      .box(0.02, 0.12, 0.02, '#1a1418', lx, G + 2.5, lz);
+    for (const dy of [-0.15, 0, 0.15]) lk.box(0.42, 0.015, 0.42, '#7a2a1a', lx, G + 2.15 + dy, lz, { ry: Math.PI / 8 });   // ribs
+    lk.box(0.015, 0.2, 0.015, '#1a1418', lx, G + 1.78, lz);                                 // tassel
     lanterns.push(addGlow(lx, G + 2.15, lz, 2.6, 0xff6a3a, 0.9, true));
     light(lx + 0.5, G + 2.1, lz, '#ff6a3a', 1.6);
   }
+  root.add(lk.mesh());
   city.signs.push({ kind: 'board', normal: 'z+', x: Y.x, y: G + 3.25, z: Y.z + 1.78, w: 2.2, h: 0.5, color: '#ff3b3b', style: 'panel', text: 'YAKITORI', seed: 5 });
-  // The grill: a dark box with pixel flames and a column of smoke.
-  box(1.2, 0.25, 0.5, darkMat, Y.x + 0.2, G + 1.27, Y.z);
+  // Pixel flames over the grill and a column of smoke.
   const fireCanvas = document.createElement('canvas');
   fireCanvas.width = 24; fireCanvas.height = 10;
   const fireTex = pixelTexture(fireCanvas);
   const fireMat = new THREE.MeshBasicMaterial({ map: fireTex, transparent: true, alphaTest: 0.1, side: THREE.DoubleSide, depthWrite: false, toneMapped: false });
   const flame = new THREE.Mesh(new THREE.PlaneGeometry(1.2, 0.5), fireMat);
-  flame.position.set(Y.x + 0.2, G + 1.62, Y.z);
+  flame.position.set(Y.x + 0.25, G + 1.56, Y.z);
   flame.rotation.y = Math.PI / 2;
   root.add(flame);
   // Skewers over the grill.
-  for (let i = 0; i < 5; i++) box(0.5, 0.06, 0.08, woodLight, Y.x + 0.2, G + 1.45, Y.z - 0.4 + i * 0.2).castShadow = false;
+  const sk = kit();
+  for (let i = 0; i < 6; i++) {
+    const z = Y.z - 0.45 + i * 0.18;
+    sk.box(0.56, 0.02, 0.02, '#d8b888', Y.x + 0.25, G + 1.34, z);
+    for (const dx of [-0.08, 0.02, 0.12]) sk.box(0.08, 0.06, 0.06, '#8a4a2a', Y.x + 0.25 + dx, G + 1.36, z);
+  }
+  root.add(sk.mesh());
   const grillLight = new THREE.PointLight(0xff8a3c, 0, 9, 1.6);
   grillLight.position.set(Y.x + 0.8, G + 1.9, Y.z);
   root.add(grillLight);

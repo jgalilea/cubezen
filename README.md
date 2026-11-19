@@ -123,7 +123,8 @@ Handy for previews and screenshots. `scene`, `time`, `t`, `season`, `fire` and `
 - `js/world/city/textures.js`: procedural city textures and their glowing twin (lit windows, shop glass, neon tubes), repainted each season
 - `js/world/city/signs.js`: the pixel font, the invented glyph script, the sign atlas and the animated screen
 - `js/world/city/props.js`: street lamps, utility poles and cables, traffic lights and the yakitori stall
-- `js/world/city/life.js`: people with umbrellas, cars and the train
+- `js/world/city/life.js`: people with umbrellas, cars, the yakitori cook and the train
+- `js/world/city/kit.js`: builds small things (cars, people, the stall) from boxes merged into one mesh, with fine surface patterns (fabric, wood, rubber...)
 - `docs/screenshots/`: the images in this README
 
 ## Deployment
